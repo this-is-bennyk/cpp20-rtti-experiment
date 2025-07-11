@@ -13,7 +13,7 @@ This experiment creates a runtime type information (RTTI) system that allows for
 
 ...did I make it? With some C++20 chicanery.
 
-...do you use it? Great question! Like this:
+...do you use it? Great question! Like this, in your implementation (.cpp/.cxx/etc.) file:
 
 ### Basic registration
 ```c++
