@@ -22,7 +22,7 @@ META(MyType)
 
 ### Adding inheritance
 ```c++
-META(MyType, Meta::AddInheritance<Type, Base, ...>())
+META(MyType, Meta::AddInheritance<Type, Base1, Base2, ...>())
 ```
 
 ## May I?
