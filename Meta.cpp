@@ -1,24 +1,37 @@
 #include "Meta.h"
 
+#include <iomanip>
 #include <iostream>
 #include <limits>
+#include "MetaConfig.h"
 #include <unordered_map>
 
-namespace
+namespace Meta
 {
-	Meta::Index type_counter = 0;
+	static Index type_counter = 0;
 
-	std::vector<Meta::Information> infos{};
-	std::unordered_map<std::string_view, Meta::Index> name_to_index{};
+	template<typename Reservable>
+	static Reservable Prealloc()
+	{
+		Reservable result;
+		result.reserve(kPreallocationAmount);
+		return result;
+	}
+
+	static auto infos = Prealloc<std::vector<Information>>();
+	static auto name_to_index = Prealloc<std::unordered_map<std::string_view, Index>>();
+
+	// static auto constructors = Prealloc<std::vector<Constructor>>();
+	// static auto destructors = Prealloc<std::vector<Destructor>>();
 }
 
 namespace Meta
 {
-	const Information& Register(std::string_view name, size_t size)
+	const Information& Register(const std::string_view name, const size_t size)
 	{
 		Index index = kInvalidType;
 
-		if (name_to_index.empty() || name_to_index.find(name) == name_to_index.end())
+		if (name_to_index.empty() || !name_to_index.contains(name))
 		{
 			index = type_counter++;
 
@@ -38,9 +51,9 @@ namespace Meta
 		return infos[index];
 	}
 
-	Index Find(std::string_view name)
+	Index Find(const std::string_view name)
 	{
-		auto iterator = name_to_index.find(name);
+		const auto iterator = name_to_index.find(name);
 
 		if (iterator == name_to_index.end())
 			return kInvalidType;
@@ -60,16 +73,14 @@ namespace Meta
 		return type_index > kInvalidType && type_index <= type_counter;
 	}
 
-	bool AddInheritance(Index derived, const std::vector<Index>& directly_inherited)
+	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited)
 	{
 		if (directly_inherited.empty())
 			return true;
 
-		Information& derived_info = infos[derived];
-
-		for (Index parent : directly_inherited)
+		for (const Index parent : directly_inherited)
 		{
-			if (parent == derived || !Valid(parent))
+			if (parent == derived_info.index || !Valid(parent))
 				continue;
 
 			if (size_t(parent) >= derived_info.bases.size())
@@ -86,10 +97,10 @@ namespace Meta
 			for (size_t parent_base_index = 0; parent_info.num_bases > 0 && parent_base_index < parent_info.bases.size(); ++parent_base_index)
 			{
 				if (parent_info.bases[parent_base_index])
-					parent_inherited.push_back(parent_base_index);
+					parent_inherited.push_back(Index(parent_base_index));
 			}
 
-			AddInheritance(derived, parent_inherited);
+			AddInheritance(derived_info, parent_inherited);
 		}
 
 		return true;
@@ -97,10 +108,53 @@ namespace Meta
 
 	void Dump()
 	{
-		for (Information& info : infos)
+		static constexpr auto kLabel = "[Meta] ";
+
+		std::cout << kLabel << "-------------------- Meta --------------------" << std::endl;
+		std::cout << kLabel << "~~~~~ Type List ~~~~" << std::endl;
+
+		Index digits = 0;
+		Index type_counter_copy = type_counter;
+
+		while (type_counter_copy > 0)
 		{
-			std::cout << info.name << " (ID: " << info.index << ")" << std::endl;
+			type_counter_copy /= 10;
+			++digits;
 		}
+
+		for (const Information& info : infos)
+		{
+			std::cout << kLabel << "Type ID: " << std::setfill('0') << std::setw(int(digits)) << info.index <<
+					" | Name: " << info.name;
+
+			if (info.num_bases > 0)
+			{
+				std::cout << " | Bases: ";
+
+				Index base_count = 0;
+
+				for (size_t base_index = 0; base_index < info.bases.size(); ++base_index)
+				{
+					if (info.bases[base_index])
+					{
+						std::cout << infos[base_index].name << " ";
+
+						if (base_count < info.num_bases - 1)
+							std::cout << ", ";
+
+						++base_count;
+					}
+				}
+			}
+
+			std::cout << std::endl;
+		}
+
+		std::cout << kLabel << "~~~~~ Type Stats ~~~~~" << std::endl;
+		std::cout << kLabel << "Number of types: " << type_counter << std::endl;
+
+		if (size_t(type_counter) > kPreallocationAmount)
+			std::cout << kLabel << "Recommendation: Set kPreallocationAmount to " << type_counter << std::endl;
 	}
 
 	View::operator bool() const
@@ -113,17 +167,18 @@ namespace Meta
 		return data && Valid(type);
 	}
 
-	bool View::is(Meta::Index type_index) const
+	bool View::is(const Information& info) const
 	{
-		if (!(Valid(type_index) && valid()))
+		if (!(Valid(info.index) && valid()))
 			return false;
 
-		if (type == type_index)
+		if (type == info.index)
 			return true;
 
-		const Information& info = *Get(type);
+		const Information* my_info = Get(type);
+		assert(my_info && "Should not be nullptr");
 
-		return size_t(type_index) < info.bases.size() && info.bases[type_index];
+		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
 }
 
@@ -161,7 +216,7 @@ namespace Pools
 			if (last_deleted != kInvalidIndex)
 			{
 				index = last_deleted;
-				Index next_to_recycle = deleted_jump_table[last_deleted];
+				const Index next_to_recycle = deleted_jump_table[last_deleted];
 
 				// Indicate that this element is in use again
 				deleted_jump_table[last_deleted] = kInvalidIndex;
@@ -172,17 +227,23 @@ namespace Pools
 				if (first_deleted == index)
 					first_deleted = kInvalidIndex;
 
+				const Meta::Information* info = Meta::Get(type);
+				assert(info);
+
 				// Clear previous data
-				for (size_t i = 0; i < Meta::Get(type)->size; ++i)
-					data[index * Meta::Get(type)->size + i] = 0;
+				for (size_t i = 0; i < info->size; ++i)
+					data[index * info->size + i] = 0;
 			}
 			else if (deleted_jump_table.size() < kMaxSize)
 			{
-				data.resize((num_allocated + 1) * Meta::Get(type)->size, u8(0));
+				const Meta::Information* info = Meta::Get(type);
+				assert(info);
+
+				data.resize((num_allocated + 1) * info->size, u8(0));
 				deleted_jump_table.push_back(kInvalidIndex);
 				references.push_back(0);
 
-				index = deleted_jump_table.size() - 1;
+				index = Index(deleted_jump_table.size() - 1);
 			}
 			else
 	#ifdef _DEBUG
@@ -227,23 +288,24 @@ namespace Pools
 			}
 		}
 
-		bool is_valid(Index index) const
+		[[nodiscard]] bool is_valid(Index index) const
 		{
 			return index > kInvalidIndex && size_t(index) < deleted_jump_table.size();
 		}
 
 		void* get(Index index)
 		{
+			assert(Meta::Get(type) && "Should not be nullptr");
 			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
 		}
 
-		bool is_deleted(Index index) const
+		[[nodiscard]] bool is_deleted(Index index) const
 		{
-			bool valid = is_valid(index);
+			const bool valid = is_valid(index);
 
 			// The first deleted element will have the invalid index as its next jump index
 			// so we need to check for that by seeing if this index is that one
-			bool deleted = deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
+			const bool deleted = deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
 
 			return valid && deleted;
 		}
@@ -367,9 +429,9 @@ namespace Meta
 		return view.valid() && index != Pools::kInvalidIndex;
 	}
 
-	bool Handle::is(Meta::Index type) const
+	bool Handle::is(const Information& info) const
 	{
-		return view.is(type);
+		return view.is(info);
 	}
 
 	View Handle::peek() const

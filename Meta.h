@@ -1,10 +1,10 @@
-#pragma once
+#ifndef META_H
+#define META_H
 
 #include <cassert>
 #include <cstdint>
 #include <functional>
 #include <string_view>
-#include <typeindex>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -40,7 +40,7 @@ namespace Meta
 		size_t num_bases = 0;
 	};
 
-	extern const Information& Register(std::string_view name, size_t size);
+	extern const Information& Register(const std::string_view name, const size_t size);
 
 	template<typename T>
 	static const Information& Info()
@@ -50,7 +50,7 @@ namespace Meta
 		return info;
 	}
 
-	static Index Find(std::string_view name);
+	static Index Find(const std::string_view name);
 
 	template<typename T>
 	static Index Find()
@@ -70,13 +70,13 @@ namespace Meta
 
 	static bool Valid(Index type_index);
 
-	extern bool AddInheritance(Index derived, const std::vector<Index>& directly_inherited);
+	extern bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited);
 
 	template<typename T, typename... DirectlyInherited>
 	static bool AddInheritance()
 	{
 		const std::vector<Index> directly_inherited{ ((Info<DirectlyInherited>().index), ...) };
-		return AddInheritance(Info<T>().index, directly_inherited);
+		return AddInheritance(const_cast<Information&>(Info<T>()), directly_inherited);
 	}
 
 	void Dump();
@@ -111,15 +111,15 @@ namespace Meta
 		View& operator=(const View&) = default;
 		View& operator=(View&&) = default;
 
-		operator bool() const;
+		explicit operator bool() const;
 		[[nodiscard]] bool valid() const;
 
-		[[nodiscard]] bool is(Meta::Index type_index) const;
+		[[nodiscard]] bool is(const Information& info) const;
 
 		template<typename T>
 		[[nodiscard]] bool is() const
 		{
-			return is(Info<T>().index);
+			return is(Info<T>());
 		}
 
 		template<typename T>
@@ -131,10 +131,7 @@ namespace Meta
 
 
 		template<typename T>
-		T& as() const
-		{
-			return *raw<T>();
-		}
+		T& as() const { return *raw<T>(); }
 
 	private:
 		void* data = nullptr;
@@ -142,7 +139,7 @@ namespace Meta
 
 		friend class Handle;
 	};
-};
+}
 
 namespace Pools
 {
@@ -182,15 +179,15 @@ namespace Meta
 		Handle& operator=(const Handle& other);
 		Handle& operator=(Handle&& other) noexcept;
 
-		operator bool() const;
+		explicit operator bool() const;
 		[[nodiscard]] bool valid() const;
 
-		[[nodiscard]] bool is(Meta::Index type) const;
+		[[nodiscard]] bool is(const Information& info) const;
 
 		template<typename T>
 		[[nodiscard]] bool is() const
 		{
-			return is(Meta::Info<T>().index);
+			return is(Meta::Info<T>());
 		}
 
 		template<typename T>
@@ -441,3 +438,5 @@ namespace Meta \
 
 #define META(type, ...) META_COMPLEX(type, type, __VA_ARGS__)
 #define META_AS(type, alt_name, ...) using alt_name = type; META(alt_name, __VA_ARGS__)
+
+#endif

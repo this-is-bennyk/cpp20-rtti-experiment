@@ -40,7 +40,7 @@ int main()
 	std::cout << member(foo).as<int>() << std::endl;
 
 	u8 bar_memory[sizeof(Bar)] = { 0 };
-	Meta::View bar_view = Meta::View(&bar_memory[0], Meta::Info<Bar>());
+	const auto bar_view = Meta::View(&bar_memory[0], Meta::Info<Bar>());
 
 	const Meta::Constructor constructor = Meta::FromCtor<Bar>();
 
@@ -49,7 +49,8 @@ int main()
 	bar_view.as<Bar>().x = 2;
 	bar_view.as<Bar>().y = 3;
 
-	std::cout << bar_view.as<Bar>().x << ", " << bar_view.as<Bar>().y << std::endl;
+	std::cout << bar_view.as<const Bar>().x << ", " << bar_view.as<const Bar>().y << std::endl;
+	std::cout << bar_view.as<const Foo>().x << std::endl;
 
 	const Meta::Destructor destructor = Meta::FromDtor<Bar>();
 
