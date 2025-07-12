@@ -11,24 +11,12 @@ META(Bar, Meta::AddInheritance<Type, Foo>())
 
 int main()
 {
-	// // TIP Press <shortcut actionId="RenameElement"/> when your caret is at the <b>lang</b> variable name to see how CLion can help you rename it.
-	// const auto language = "C++";
-	// std::cout << "Hello and welcome to " << language << "!\n";
-	//
-	// for (int i = 1; i <= 5; i++)
-	// {
-	// 	// TIP Press <shortcut actionId="Debug"/> to start debugging your code. We have set one <icon src="AllIcons.Debugger.Db_set_breakpoint"/> breakpoint for you, but you can always add more by pressing <shortcut actionId="ToggleLineBreakpoint"/>.
-	// 	std::cout << "i = " << i << std::endl;
-	// }
-	//
-	// return 0;
-	// TIP See CLion help at <a href="https://www.jetbrains.com/help/clion/">jetbrains.com/help/clion/</a>. Also, you can try interactive lessons for CLion by selecting 'Help | Learn IDE Features' from the main menu.
-
 	Meta::Dump();
 
 	Meta::Spandle span(3);
 
 	Meta::Handle b = true;
+	Meta::Handle b2 = b;
 
 	span[0] = true;
 	span[1] = 34;
@@ -40,7 +28,30 @@ int main()
 	std::cout << std::get<1>(result) << std::endl;
 	std::cout << std::get<2>(result) << std::endl;
 
-	const Meta::Method f = Meta::From(&Meta::Handle::valid);
+	const Meta::Method method = Meta::FromMethod(&Meta::Handle::valid);
 
-	std::cout << std::boolalpha << f(b, Meta::Spandle()).as<bool>() << std::endl;
+	std::cout << std::boolalpha << method(b, Meta::Spandle()).as<bool>() << std::endl;
+
+	Foo foo;
+	foo.x = 1;
+
+	const Meta::Member member = Meta::FromMember(&Foo::x);
+
+	std::cout << member(foo).as<int>() << std::endl;
+
+	u8 bar_memory[sizeof(Bar)] = { 0 };
+	Meta::View bar_view = Meta::View(&bar_memory[0], Meta::Info<Bar>());
+
+	const Meta::Constructor constructor = Meta::FromCtor<Bar>();
+
+	constructor(bar_view, Meta::Spandle());
+
+	bar_view.as<Bar>().x = 2;
+	bar_view.as<Bar>().y = 3;
+
+	std::cout << bar_view.as<Bar>().x << ", " << bar_view.as<Bar>().y << std::endl;
+
+	const Meta::Destructor destructor = Meta::FromDtor<Bar>();
+
+	destructor(bar_view);
 }

@@ -9,12 +9,12 @@ namespace
 	Meta::Index type_counter = 0;
 
 	std::vector<Meta::Information> infos{};
-	std::unordered_map<std::string, Meta::Index> name_to_index{};
+	std::unordered_map<std::string_view, Meta::Index> name_to_index{};
 }
 
 namespace Meta
 {
-	const Information& Register(const std::string& name, size_t size)
+	const Information& Register(std::string_view name, size_t size)
 	{
 		Index index = kInvalidType;
 
@@ -38,7 +38,7 @@ namespace Meta
 		return infos[index];
 	}
 
-	Index Find(const std::string& name)
+	Index Find(std::string_view name)
 	{
 		auto iterator = name_to_index.find(name);
 
@@ -286,6 +286,13 @@ namespace Pools
 
 namespace Meta
 {
+	Handle::Handle(Handle& other)
+		: view(other.view)
+		, index(other.index)
+	{
+		Pools::get(view.type)->ref(index);
+	}
+
 	inline Handle::Handle(const Handle& other)
 		: view(other.view)
 		, index(other.index)
@@ -300,12 +307,12 @@ namespace Meta
 		other.invalidate();
 	}
 
-	Handle::Handle(Meta::Index type)
+	Handle::Handle(const Information& info)
 		: view(Meta::View())
 		, index(Pools::kInvalidIndex)
 	{
-		index = Pools::get(type)->alloc();
-		view = Meta::View(Pools::get(type)->get(index), type);
+		index = Pools::get(info.index)->alloc();
+		view = Meta::View(Pools::get(info.index)->get(index), info);
 	}
 
 	Handle::Handle(View v)

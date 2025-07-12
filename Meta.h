@@ -3,7 +3,8 @@
 #include <cassert>
 #include <cstdint>
 #include <functional>
-#include <string>
+#include <string_view>
+#include <typeindex>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -21,25 +22,25 @@ using i64 = int64_t;
 using f32 = float;
 using f64 = double;
 
-template<typename T>
-extern const std::string& nameof();
-
 namespace Meta
 {
+	template<typename T>
+	extern std::string_view nameof();
+
 	using Index = long long;
 	static constexpr Index kInvalidType = -1;
 
 	struct Information
 	{
 		Index index = kInvalidType;
-		const std::string& name;
+		std::string_view name;
 		size_t size;
 
 		std::vector<bool> bases;
 		size_t num_bases = 0;
 	};
 
-	extern const Information& Register(const std::string& name, size_t size);
+	extern const Information& Register(std::string_view name, size_t size);
 
 	template<typename T>
 	static const Information& Info()
@@ -49,7 +50,7 @@ namespace Meta
 		return info;
 	}
 
-	static Index Find(const std::string& name);
+	static Index Find(std::string_view name);
 
 	template<typename T>
 	static Index Find()
@@ -85,25 +86,26 @@ namespace Meta
 	public:
 		View() = default;
 
-		View(void* ptr, Index type_index)
+		View(void* ptr, const Information& info)
 			: data(ptr)
-			, type(type_index)
+			, type(info.index)
 		{}
 
-		template<typename T>
+		View(const View&) = default;
+		View(View&&) = default;
+
+		template<typename T> requires (!std::is_same_v<T, View>)
 		View(T* ptr)
 			: data(ptr)
 			, type(Info<T>().index)
 		{}
 
-		template<typename T>
+		template<typename T> requires (!std::is_same_v<T, View>)
 		View(T& ref)
 			: data(&ref)
 			, type(Info<T>().index)
 		{}
 
-		View(const View&) = default;
-		View(View&&) = default;
 		~View() = default;
 
 		View& operator=(const View&) = default;
@@ -121,10 +123,17 @@ namespace Meta
 		}
 
 		template<typename T>
-		T& as() const
+		T* raw() const
 		{
 			assert(is<T>());
-			return *static_cast<T*>(data);
+			return static_cast<T*>(data);
+		}
+
+
+		template<typename T>
+		T& as() const
+		{
+			return *raw<T>();
 		}
 
 	private:
@@ -147,22 +156,23 @@ namespace Meta
 	{
 	public:
 		Handle() = default;
+		Handle(Handle& other);
 		Handle(const Handle& other);
 		Handle(Handle&& other) noexcept;
 
-		explicit Handle(Meta::Index type);
+		explicit Handle(const Information& info);
 		explicit Handle(View v);
 
-		template<typename T>
+		template<typename T> requires (!std::is_same_v<T, Handle>)
 		Handle(const T& value)
-			: Handle(Meta::Info<T>().index)
+			: Handle(Meta::Info<T>())
 		{
 			view.as<std::remove_cvref_t<T>>() = value;
 		}
 
-		template<typename T>
+		template<typename T> requires (!std::is_same_v<T, Handle>)
 		Handle(T&& value)
-			: Handle(Meta::Info<T>().index)
+			: Handle(Meta::Info<T>())
 		{
 			view.as<std::remove_cvref_t<T>>() = std::forward<T>(value);
 		}
@@ -235,7 +245,7 @@ namespace Meta
 		{
 			([&]
 			{
-				std::get<Index>(tuple) = (*this)[Index].template as<Handle>().template as<std::tuple_element_t<Index, Tuple>>();
+				std::get<Index>(tuple) = (*this)[Index].template as<std::tuple_element_t<Index, Tuple>>();
 
 			}(), ...);
 		}
@@ -244,7 +254,7 @@ namespace Meta
 	using Method = std::function<Handle (View, Spandle)>;
 
 	template<typename T, typename Return, typename... Args>
-	static Method From(Return (T::* method)(Args...))
+	static Method FromMethod(Return (T::*method)(Args...))
 	{
 		return [method](const View view, Spandle parameters) -> Handle
 		{
@@ -276,7 +286,7 @@ namespace Meta
 	}
 
 	template<typename T, typename Return, typename... Args>
-	static Method From(Return (T::*method)(Args...) const)
+	static Method FromMethod(Return (T::*method)(Args...) const)
 	{
 		return [method](const View view, Spandle parameters) -> Handle
 		{
@@ -310,7 +320,7 @@ namespace Meta
 	using Function = std::function<Handle (Spandle)>;
 
 	template<typename T, typename Return, typename... Args>
-	static Function From(Return (*function)(Args...))
+	static Function FromMethod(Return (*function)(Args...))
 	{
 		return [function](Spandle parameters) -> Handle
 		{
@@ -341,20 +351,83 @@ namespace Meta
 		};
 	}
 
-	// using Member = std::function<Handle (View)>;
+	using Member = std::function<Handle (View)>;
+
+	template<typename T, typename Return>
+	static Member FromMember(Return T::*member)
+	{
+		return [member](const View view) -> Handle
+		{
+			return Handle(view.as<T>().*member);
+		};
+	}
+
+	using Constructor = void (*)(View, Spandle);
+
+	template<typename T, typename Tuple, std::size_t... Index>
+	static void NonDefaultCtorImpl(const View view, Tuple& tuple, std::index_sequence<Index...>)
+	{
+		new (view.raw<T>()) T(((std::get<Index>(tuple)), ...));
+	}
+
+	template<typename T, typename... Args>
+	static Constructor FromCtor()
+	{
+		return [](const View view, Spandle parameters) -> void
+		{
+			if constexpr (sizeof...(Args) > 0)
+			{
+				assert(parameters.size() == sizeof...(Args) && "Mismatched parameter number!");
+				auto arguments = parameters.expand<Args...>();
+				NonDefaultCtorImpl<T>(view, arguments, std::index_sequence_for<Args...>{});
+			}
+			else
+			{
+				assert(parameters.empty() && "Constructor takes no parameters!");
+				new (view.raw<T>()) T;
+			}
+		};
+	}
+
+	using Destructor = void (*)(View);
+
+	template<typename T>
+	static Destructor FromDtor()
+	{
+		return [](const View view) -> void
+		{
+			view.as<T>().~T();
+		};
+	}
+
+	// using Assigner = View (*)(View, Spandle);
+
+	// template<typename T, typename... Args>
+	// static Assigner FromAssignOp()
+	// {
+	// 	return [](View view, Spandle parameters) -> void
+	// 	{
+	// 		if constexpr (sizeof...(Args) > 0)
+	//
+	// 	}
+	// }
 }
 
 #define NAMEOF_DEF(type) \
-template<> \
-const std::string& nameof<type>() \
+namespace Meta \
 { \
-	static const std::string name = #type; \
-	return name; \
+	template<> \
+	std::string_view nameof<type>() \
+	{ \
+		static constexpr auto name = #type; \
+		static constexpr auto size = sizeof(#type) - 1; \
+		return std::string_view(name, size); \
+	} \
 }
 
 #define META_COMPLEX(type, simplified_name, ...) \
 NAMEOF_DEF(type) \
-namespace \
+namespace Meta \
 { \
 	static const bool k##simplified_name##Success = []() -> bool \
 		{ \
