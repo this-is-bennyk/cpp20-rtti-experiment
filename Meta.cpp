@@ -106,7 +106,7 @@ namespace Meta
 		return true;
 	}
 
-	void Dump()
+	void DumpInfo()
 	{
 		static constexpr auto kLabel = "[Meta] ";
 
@@ -203,14 +203,14 @@ namespace Pools
 	class Pool
 	{
 	public:
+		static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
+
 		Pool(Meta::Index type_index = kInvalidIndex)
 			: type(type_index)
 		{}
 
 		Index alloc()
 		{
-			static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
-
 			Index index = kInvalidIndex;
 
 			if (last_deleted != kInvalidIndex)

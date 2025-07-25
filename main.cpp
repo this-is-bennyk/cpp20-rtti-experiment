@@ -11,7 +11,7 @@ META(Bar, Meta::AddInheritance<Type, Foo>())
 
 int main()
 {
-	Meta::Dump();
+	Meta::DumpInfo();
 
 	Meta::Spandle span(3);
 
@@ -22,7 +22,7 @@ int main()
 	span[1] = 34;
 	span[2] = 3.14;
 
-	const auto result = span.expand<bool, i32, f64>();
+	const auto result = span.expand<bool, i32&, const f64&>();
 
 	std::cout << std::get<0>(result) << std::endl;
 	std::cout << std::get<1>(result) << std::endl;

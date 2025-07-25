@@ -79,7 +79,7 @@ namespace Meta
 		return AddInheritance(const_cast<Information&>(Info<T>()), directly_inherited);
 	}
 
-	void Dump();
+	void DumpInfo();
 
 	class View
 	{
@@ -131,7 +131,10 @@ namespace Meta
 
 
 		template<typename T>
-		T& as() const { return *raw<T>(); }
+		T& as() const
+		{
+			return *raw<std::remove_reference_t<T>>();
+		}
 
 	private:
 		void* data = nullptr;
@@ -160,14 +163,14 @@ namespace Meta
 		explicit Handle(const Information& info);
 		explicit Handle(View v);
 
-		template<typename T> requires (!std::is_same_v<T, Handle>)
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
 		Handle(const T& value)
 			: Handle(Meta::Info<T>())
 		{
 			view.as<std::remove_cvref_t<T>>() = value;
 		}
 
-		template<typename T> requires (!std::is_same_v<T, Handle>)
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
 		Handle(T&& value)
 			: Handle(Meta::Info<T>())
 		{
@@ -227,24 +230,16 @@ namespace Meta
 		template<typename... Args>
 		std::tuple<Args...> expand() const
 		{
-			std::tuple<Args...> result;
-			
-			expand_impl(result, std::index_sequence_for<Args...>{});
-
-			return result;
+			return expand_impl<std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 		}
 
 	private:
 		Handle pimpl;
 
 		template<typename Tuple, std::size_t... Index>
-		void expand_impl(Tuple& tuple, std::index_sequence<Index...>) const
+		decltype(auto) expand_impl(std::index_sequence<Index...>) const
 		{
-			([&]
-			{
-				std::get<Index>(tuple) = (*this)[Index].template as<std::tuple_element_t<Index, Tuple>>();
-
-			}(), ...);
+			return Tuple((*this)[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
 		}
 	};
 	
@@ -261,12 +256,10 @@ namespace Meta
 			{
 				assert(parameters.size() == sizeof...(Args) && "Mismatched parameter number!");
 
-				std::tuple<Args...> arguments = parameters.expand<Args...>();
-
 				if constexpr (std::is_void_v<Return>)
-					std::apply(view.as<T>().*method, arguments);
+					std::apply(view.as<T>().*method, parameters.expand<Args...>());
 				else
-					result = Handle(std::apply(view.as<T>().*method, arguments));
+					result = Handle(std::apply(view.as<T>().*method, parameters.expand<Args...>()));
 			}
 			else
 			{
@@ -293,12 +286,10 @@ namespace Meta
 			{
 				assert(parameters.size() == sizeof...(Args) && "Mismatched parameter number!");
 
-				std::tuple<Args...> arguments = parameters.expand<Args...>();
-
 				if constexpr (std::is_void_v<Return>)
-					std::apply(view.as<T>().*method, arguments);
+					std::apply(view.as<T>().*method, parameters.expand<Args...>());
 				else
-					result = Handle(std::apply(view.as<T>().*method, arguments));
+					result = Handle(std::apply(view.as<T>().*method, parameters.expand<Args...>()));
 			}
 			else
 			{
@@ -327,12 +318,10 @@ namespace Meta
 			{
 				assert(parameters.size() == sizeof...(Args) && "Mismatched parameter number!");
 
-				std::tuple<Args...> arguments = parameters.expand<Args...>();
-
 				if constexpr (std::is_void_v<Return>)
-					std::apply(function, arguments);
+					std::apply(function, parameters.expand<Args...>());
 				else
-					result = Handle(std::apply(function, arguments));
+					result = Handle(std::apply(function, parameters.expand<Args...>()));
 			}
 			else
 			{
@@ -361,12 +350,6 @@ namespace Meta
 
 	using Constructor = void (*)(View, Spandle);
 
-	template<typename T, typename Tuple, std::size_t... Index>
-	static void NonDefaultCtorImpl(const View view, Tuple& tuple, std::index_sequence<Index...>)
-	{
-		new (view.raw<T>()) T(((std::get<Index>(tuple)), ...));
-	}
-
 	template<typename T, typename... Args>
 	static Constructor FromCtor()
 	{
@@ -375,8 +358,12 @@ namespace Meta
 			if constexpr (sizeof...(Args) > 0)
 			{
 				assert(parameters.size() == sizeof...(Args) && "Mismatched parameter number!");
-				auto arguments = parameters.expand<Args...>();
-				NonDefaultCtorImpl<T>(view, arguments, std::index_sequence_for<Args...>{});
+
+				std::apply([view](Args... args) -> void
+				{
+					new (view.raw<T>()) T(args...);
+				}
+				, parameters.expand<Args...>());
 			}
 			else
 			{
