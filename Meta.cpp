@@ -1,10 +1,13 @@
 #include "Meta.h"
 
+#include <algorithm>
+#include <deque>
 #include <iomanip>
 #include <iostream>
 #include <limits>
-#include "MetaConfig.h"
+#include <queue>
 #include <unordered_map>
+#include "MetaConfig.h"
 
 namespace Meta
 {
@@ -63,9 +66,8 @@ namespace Meta
 
 	const Information* Get(Index type)
 	{
-		if (type > kInvalidType && type <= type_counter)
-			return &infos[type];
-		return nullptr;
+		assert(type > kInvalidType && type <= type_counter && "Type index out of bounds!");
+		return &infos[type];
 	}
 
 	bool Valid(Index type_index)
@@ -176,8 +178,6 @@ namespace Meta
 			return true;
 
 		const Information* my_info = Get(type);
-		assert(my_info && "Should not be nullptr");
-
 		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
 }
@@ -200,11 +200,11 @@ META_AS(Meta::View, View)
 
 namespace Pools
 {
+	static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
+
 	class Pool
 	{
 	public:
-		static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
-
 		Pool(Meta::Index type_index = kInvalidIndex)
 			: type(type_index)
 		{}
@@ -228,7 +228,6 @@ namespace Pools
 					first_deleted = kInvalidIndex;
 
 				const Meta::Information* info = Meta::Get(type);
-				assert(info);
 
 				// Clear previous data
 				for (size_t i = 0; i < info->size; ++i)
@@ -237,7 +236,6 @@ namespace Pools
 			else if (deleted_jump_table.size() < kMaxSize)
 			{
 				const Meta::Information* info = Meta::Get(type);
-				assert(info);
 
 				data.resize((num_allocated + 1) * info->size, u8(0));
 				deleted_jump_table.push_back(kInvalidIndex);
@@ -246,11 +244,11 @@ namespace Pools
 				index = Index(deleted_jump_table.size() - 1);
 			}
 			else
-	#ifdef _DEBUG
+#ifdef _DEBUG
 				assert(!"Ran out of memory!");
-	#else
+#else
 				std::abort();
-	#endif
+#endif
 
 			if (index != kInvalidIndex)
 			{
@@ -295,7 +293,6 @@ namespace Pools
 
 		void* get(Index index)
 		{
-			assert(Meta::Get(type) && "Should not be nullptr");
 			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
 		}
 
@@ -322,7 +319,7 @@ namespace Pools
 		Meta::Index type;
 	};
 
-	Pool* get(Meta::Index type)
+	Pool* get_pool(Meta::Index type)
 	{
 		static std::vector<Pool> pools;
 		static std::vector<bool> used;
@@ -339,11 +336,77 @@ namespace Pools
 		if (!used[type])
 		{
 			pools[type] = Pool(type);
-			used[type] = true;
+			used[type]  = true;
 		}
 
 		return &pools[type];
 	}
+
+	class Heap
+	{
+	public:
+		struct Range
+		{
+			Index start;
+			Index end;
+
+			[[nodiscard]] size_t size() const { return size_t(end - start); }
+		};
+
+		struct RangeComparator
+		{
+			bool operator()(const Range& lhs, const Range& rhs) const
+			{
+				return lhs.size() < rhs.size();
+			}
+		};
+
+		Heap(Meta::Index type_index = kInvalidIndex)
+			: type(type_index)
+		{}
+
+		Range alloc(size_t size)
+		{
+			Range result(kInvalidIndex, kInvalidIndex);
+
+			if (queue.size() < kMaxSize)
+			{
+				if (queue.empty() || queue.top().size() < size)
+				{
+					const Meta::Information* info = Meta::Get(type);
+
+					data.resize((num_allocated + size) * info->size, u8(0));
+
+					result.start = Index(num_allocated);
+					result.end = result.start + Index(size);
+				}
+				else
+				{
+					result = queue.top();
+					queue.pop();
+				}
+			}
+			else
+#ifdef _DEBUG
+				assert(!"Ran out of memory!");
+#else
+				std::abort();
+#endif
+
+			if (result.start != kInvalidIndex && result.end != kInvalidIndex)
+				num_allocated += size;
+
+			return result;
+		}
+
+	private:
+		std::vector<u8> data;
+		std::priority_queue<Range, std::deque<Range>, RangeComparator> queue;
+
+		size_t num_allocated = 0;
+
+		Meta::Index type;
+	};
 }
 
 namespace Meta
@@ -352,14 +415,14 @@ namespace Meta
 		: view(other.view)
 		, index(other.index)
 	{
-		Pools::get(view.type)->ref(index);
+		Pools::get_pool(view.type)->ref(index);
 	}
 
 	inline Handle::Handle(const Handle& other)
 		: view(other.view)
 		, index(other.index)
 	{
-		Pools::get(view.type)->ref(index);
+		Pools::get_pool(view.type)->ref(index);
 	}
 
 	Handle::Handle(Handle&& other) noexcept
@@ -373,8 +436,8 @@ namespace Meta
 		: view(Meta::View())
 		, index(Pools::kInvalidIndex)
 	{
-		index = Pools::get(info.index)->alloc();
-		view = Meta::View(Pools::get(info.index)->get(index), info);
+		index = Pools::get_pool(info.index)->alloc();
+		view = Meta::View(Pools::get_pool(info.index)->get(index), info);
 	}
 
 	Handle::Handle(View v)
@@ -397,7 +460,7 @@ namespace Meta
 			view = other.view;
 			index = other.index;
 
-			Pools::get(view.type)->ref(index);
+			Pools::get_pool(view.type)->ref(index);
 		}
 
 		return *this;
@@ -450,7 +513,7 @@ namespace Meta
 		if (!valid())
 			return;
 
-		Pools::get(view.type)->deref(index);
+		Pools::get_pool(view.type)->deref(index);
 		invalidate();
 	}
 
