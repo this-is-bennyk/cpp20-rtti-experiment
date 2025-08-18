@@ -27,6 +27,7 @@ namespace Meta
 
 	static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
 	static auto destructors = PreallocateContainer<std::vector<Destructor>>();
+	static auto assigners = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Assigner>>>();
 }
 
 namespace Meta
@@ -49,8 +50,9 @@ namespace Meta
 
 			name_to_index.insert_or_assign(name, index);
 
-			constructors.push_back(std::unordered_map<FunctionSignature, Constructor>());
+			constructors.emplace_back();
 			destructors.push_back(nullptr);
+			assigners.emplace_back();
 		}
 		else
 			index = name_to_index.find(name)->second;
@@ -138,6 +140,17 @@ namespace Meta
 		return destructors[type];
 	}
 
+	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature)
+	{
+		auto [iterator, success] = assigners[info.index].try_emplace(signature, assigner);
+		return success;
+	}
+
+	Assigner GetAssigner(const Index type, const FunctionSignature signature)
+	{
+		return assigners[type][signature];
+	}
+
 	void DumpInfo()
 	{
 		static constexpr auto kLabel = "[Meta] ";
@@ -209,11 +222,8 @@ namespace Meta
 
 	bool View::is(const Information& info, const Qualifier qualifier_flags) const
 	{
-		if (qualifier_flags != qualifiers)
-		{
-			if (!is_in_place_primitive())
-				return bool((qualifier_flags & ~kQualifier_Constant) == qualifiers);
-		}
+		if (qualifier_flags != qualifiers && !is_in_place_primitive())
+			return bool((qualifier_flags & ~kQualifier_Constant) == qualifiers);
 
 		if (is_in_place_primitive())
 			return (std::abs(type) + kByValue_u8) == info.index;
@@ -231,20 +241,20 @@ namespace Meta
 	bool View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
 }
 
-META(u8,   AddPOD<Type>())
-META(u16,  AddPOD<Type>())
-META(u32,  AddPOD<Type>())
-META(u64,  AddPOD<Type>())
-META(i8,   AddPOD<Type>())
-META(i16,  AddPOD<Type>())
-META(i32,  AddPOD<Type>())
-META(i64,  AddPOD<Type>())
-META(f32,  AddPOD<Type>())
-META(f64,  AddPOD<Type>())
-META(bool, AddPOD<Type>())
+META(u8,   AddPOD<Type>());
+META(u16,  AddPOD<Type>());
+META(u32,  AddPOD<Type>());
+META(u64,  AddPOD<Type>());
+META(i8,   AddPOD<Type>());
+META(i16,  AddPOD<Type>());
+META(i32,  AddPOD<Type>());
+META(i64,  AddPOD<Type>());
+META(f32,  AddPOD<Type>());
+META(f64,  AddPOD<Type>());
+META(bool, AddPOD<Type>());
 
-META_AS(Meta::View,   View,   AddPOD<Type>())
-META_AS(Meta::Handle, Handle, AddPOD<Type>())
+META_AS(Meta::View,   View,   AddPOD<Type>());
+META_AS(Meta::Handle, Handle, AddPOD<Type>());
 
 namespace Memory
 {

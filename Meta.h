@@ -555,7 +555,7 @@ namespace Meta
 		return FromCtorImpl<T, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 	}
 
-	extern bool AddConstructor(const Information& info, Constructor constructor, FunctionSignature signature);
+	extern bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature);
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static bool AddConstructor()
@@ -563,12 +563,12 @@ namespace Meta
 		return AddConstructor(Info<T>(), FromCtor<T, Args...>(), FromParameterList<Args...>());
 	}
 
-	extern Constructor GetConstructor(Index type, FunctionSignature signature);
+	extern Constructor GetConstructor(const Index type, const FunctionSignature signature);
 
 	template<typename T, typename... Args>
 	static Constructor GetConstructor()
 	{
-		return GetDefaultConstructor(Info<T>().index, FromParameterList<Args...>());
+		return GetConstructor(Info<T>().index, FromParameterList<Args...>());
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -586,7 +586,7 @@ namespace Meta
 		};
 	}
 
-	extern bool AddDestructor(const Information& info, Destructor destructor);
+	extern bool AddDestructor(const Information& info, const Destructor destructor);
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static bool AddDestructor()
@@ -594,7 +594,7 @@ namespace Meta
 		return AddDestructor(Info<T>(), FromDtor<T>());
 	}
 
-	extern Destructor GetDestructor(Index type);
+	extern Destructor GetDestructor(const Index type);
 
 	template<typename T>
 	static Destructor GetDestructor()
@@ -606,17 +606,63 @@ namespace Meta
 	// Assigners
 	// -----------------------------------------------------------------------------------------------------------------
 
-	// using Assigner = View (*)(View, Spandle);
+	using Assigner = View (*)(const View, const Spandle&);
 
-	// template<typename T, typename... Args>
-	// static Assigner FromAssignOp()
-	// {
-	// 	return [](View view, Spandle parameters) -> void
-	// 	{
-	// 		if constexpr (sizeof...(Args) > 0)
-	//
-	// 	}
-	// }
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static Assigner FromAssignOp()
+	{
+		return [](const View view, const Spandle& parameters) -> View
+		{
+			assert(parameters.size() == size_t(1) && "Mismatched parameter number!");
+			view.as<T&>() = parameters[0].as<U>();
+			return view;
+		};
+	}
+
+	extern bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature);
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static bool AddAssigner()
+	{
+		return AddAssigner(Info<T>(), FromAssignOp<T, U>(), FromParameterList<U>());
+	}
+
+	extern Assigner GetAssigner(const Index type, const FunctionSignature signature);
+
+	template<typename T, typename... Args>
+	static Assigner GetAssigner()
+	{
+		return GetAssigner(Info<T>().index, FromParameterList<Args...>());
+	}
+
+	// -----------------------------------------------------------------------------------------------------------------
+	// Math
+	// -----------------------------------------------------------------------------------------------------------------
+
+	using UnaryMathOperator = View (*)(const View);
+	using BinaryMathOperator = View (*)(const View, const View);
+
+	template<typename T>
+	static UnaryMathOperator FromPositive()
+	{
+		return [](const View view) -> View
+		{
+			return View(+view.as<T>());
+		};
+	}
+
+	template<typename T>
+	static UnaryMathOperator FromNegative()
+	{
+		return [](const View view) -> View
+		{
+			return View(-view.as<T>());
+		};
+	}
+
+	// -----------------------------------------------------------------------------------------------------------------
+	// Registration Helpers
+	// -----------------------------------------------------------------------------------------------------------------
 
 	template<typename T>
 	static bool AddPOD()
@@ -624,7 +670,9 @@ namespace Meta
 		return AddConstructor<T>()
 			&& AddConstructor<T, const T&>()
 			&& AddConstructor<T, T&&>()
-			&& AddDestructor<T>();
+			&&  AddDestructor<T>()
+			&&    AddAssigner<T, const T&>()
+			&&    AddAssigner<T, T&&>();
 	}
 }
 
@@ -640,11 +688,11 @@ namespace Meta \
 	} \
 }
 
-#define META_COMPLEX(type, simplified_name, ...) \
+#define META(type, ...) \
 NAMEOF_DEF(type) \
 namespace Meta \
 { \
-	static const bool k##simplified_name##Success = []() -> bool \
+	static const bool k##type##Success = []() -> bool \
 		{ \
 			Meta::Index MetaIndex = Meta::Info<type>().index; \
 			using Type = std::remove_cvref_t<type>; \
@@ -654,7 +702,6 @@ namespace Meta \
 		}(); \
 }
 
-#define META(type, ...) META_COMPLEX(type, type, __VA_ARGS__)
 #define META_AS(type, alt_name, ...) using alt_name = type; META(alt_name, __VA_ARGS__)
 
 #endif
