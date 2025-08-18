@@ -4,6 +4,7 @@
 #include <deque>
 #include <iomanip>
 #include <iostream>
+#include <iterator>
 #include <limits>
 #include <queue>
 #include <unordered_map>
@@ -14,18 +15,18 @@ namespace Meta
 	static Index type_counter = 0;
 
 	template<typename Reservable>
-	static Reservable Prealloc()
+	static Reservable PreallocateContainer()
 	{
 		Reservable result;
 		result.reserve(kPreallocationAmount);
 		return result;
 	}
 
-	static auto infos = Prealloc<std::vector<Information>>();
-	static auto name_to_index = Prealloc<std::unordered_map<std::string_view, Index>>();
+	static auto infos = PreallocateContainer<std::vector<Information>>();
+	static auto name_to_index = PreallocateContainer<std::unordered_map<std::string_view, Index>>();
 
-	// static auto constructors = Prealloc<std::vector<Constructor>>();
-	// static auto destructors = Prealloc<std::vector<Destructor>>();
+	static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
+	static auto destructors = PreallocateContainer<std::vector<Destructor>>();
 }
 
 namespace Meta
@@ -47,6 +48,9 @@ namespace Meta
 			);
 
 			name_to_index.insert_or_assign(name, index);
+
+			constructors.push_back(std::unordered_map<FunctionSignature, Constructor>());
+			destructors.push_back(nullptr);
 		}
 		else
 			index = name_to_index.find(name)->second;
@@ -64,7 +68,7 @@ namespace Meta
 		return iterator->second;
 	}
 
-	const Information* Get(Index type)
+	const Information* Get(const Index type)
 	{
 		assert(type > kInvalidType && type <= type_counter && "Type index out of bounds!");
 		return &infos[type];
@@ -82,7 +86,10 @@ namespace Meta
 
 		for (const Index parent : directly_inherited)
 		{
-			if (parent == derived_info.index || !Valid(parent))
+			if (!Valid(parent))
+				return false;
+
+			if (parent == derived_info.index)
 				continue;
 
 			if (size_t(parent) >= derived_info.bases.size())
@@ -102,10 +109,33 @@ namespace Meta
 					parent_inherited.push_back(Index(parent_base_index));
 			}
 
-			AddInheritance(derived_info, parent_inherited);
+			if (!AddInheritance(derived_info, parent_inherited))
+				return false;
 		}
 
 		return true;
+	}
+
+	bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature)
+	{
+		auto [iterator, success] = constructors[info.index].try_emplace(signature, constructor);
+		return success;
+	}
+
+	Constructor GetConstructor(const Index type, const FunctionSignature signature)
+	{
+		return constructors[type][signature];
+	}
+
+	bool AddDestructor(const Information& info, const Destructor destructor)
+	{
+		destructors[info.index] = destructor;
+		return true;
+	}
+
+	Destructor GetDestructor(const Index type)
+	{
+		return destructors[type];
 	}
 
 	void DumpInfo()
@@ -159,6 +189,14 @@ namespace Meta
 			std::cout << kLabel << "Recommendation: Set kPreallocationAmount to " << type_counter << std::endl;
 	}
 
+	View::View(void* ptr, const Information& info, const Qualifier qualifier_flags)
+		: data()
+		, type(info.index)
+		, qualifiers(qualifier_flags)
+	{
+		*reinterpret_cast<void**>(&data[0]) = ptr;
+	}
+
 	View::operator bool() const
 	{
 		return valid();
@@ -166,11 +204,20 @@ namespace Meta
 
 	bool View::valid() const
 	{
-		return data && Valid(type);
+		return is_in_place_primitive() || (Valid(type) && reinterpret_cast<const void*>(data));
 	}
 
-	bool View::is(const Information& info) const
+	bool View::is(const Information& info, const Qualifier qualifier_flags) const
 	{
+		if (qualifier_flags != qualifiers)
+		{
+			if (!is_in_place_primitive())
+				return bool((qualifier_flags & ~kQualifier_Constant) == qualifiers);
+		}
+
+		if (is_in_place_primitive())
+			return (std::abs(type) + kByValue_u8) == info.index;
+
 		if (!(Valid(info.index) && valid()))
 			return false;
 
@@ -180,37 +227,63 @@ namespace Meta
 		const Information* my_info = Get(type);
 		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
+
+	bool View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
 }
 
-META(u8)
-META(u16)
-META(u32)
-META(u64)
-META(i8)
-META(i16)
-META(i32)
-META(i64)
-META(f32)
-META(f64)
-META(bool)
-META_COMPLEX(std::vector<Meta::Handle>, stdvectormetahandle)
+META(u8,   AddPOD<Type>())
+META(u16,  AddPOD<Type>())
+META(u32,  AddPOD<Type>())
+META(u64,  AddPOD<Type>())
+META(i8,   AddPOD<Type>())
+META(i16,  AddPOD<Type>())
+META(i32,  AddPOD<Type>())
+META(i64,  AddPOD<Type>())
+META(f32,  AddPOD<Type>())
+META(f64,  AddPOD<Type>())
+META(bool, AddPOD<Type>())
 
-META_AS(Meta::Handle, Handle)
-META_AS(Meta::View, View)
+META_AS(Meta::View,   View,   AddPOD<Type>())
+META_AS(Meta::Handle, Handle, AddPOD<Type>())
 
-namespace Pools
+namespace Memory
 {
 	static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
+
+	template<typename T>
+	T* get_allocator(const Meta::Index type)
+	{
+		static std::vector<T> spaces;
+		static std::vector<bool> used;
+
+		if (!Meta::Valid(type))
+			return nullptr;
+
+		if (size_t(type) >= used.size())
+		{
+			used.resize(type + 1);
+			spaces.resize(type + 1);
+		}
+
+		if (!used[type])
+		{
+			spaces[type] = T(type);
+			used[type]  = true;
+		}
+
+		return &spaces[type];
+	}
 
 	class Pool
 	{
 	public:
-		Pool(Meta::Index type_index = kInvalidIndex)
+		explicit Pool(const Meta::Index type_index = Meta::kInvalidType)
 			: type(type_index)
 		{}
 
-		Index alloc()
+		Index alloc(const Meta::Spandle& arguments)
 		{
+			const Meta::Information* info = Meta::Get(type);
 			Index index = kInvalidIndex;
 
 			if (last_deleted != kInvalidIndex)
@@ -226,17 +299,9 @@ namespace Pools
 				// If we've reached the first index deleted, mark it as no longer being deleted
 				if (first_deleted == index)
 					first_deleted = kInvalidIndex;
-
-				const Meta::Information* info = Meta::Get(type);
-
-				// Clear previous data
-				for (size_t i = 0; i < info->size; ++i)
-					data[index * info->size + i] = 0;
 			}
 			else if (deleted_jump_table.size() < kMaxSize)
 			{
-				const Meta::Information* info = Meta::Get(type);
-
 				data.resize((num_allocated + 1) * info->size, u8(0));
 				deleted_jump_table.push_back(kInvalidIndex);
 				references.push_back(0);
@@ -244,7 +309,7 @@ namespace Pools
 				index = Index(deleted_jump_table.size() - 1);
 			}
 			else
-#ifdef _DEBUG
+#if CMAKE_BUILD_TYPE == Debug
 				assert(!"Ran out of memory!");
 #else
 				std::abort();
@@ -254,12 +319,17 @@ namespace Pools
 			{
 				++num_allocated;
 				ref(index);
+
+				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
+				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
+				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
+				constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
 			}
 
 			return index;
 		}
 
-		void ref(Index index)
+		void ref(const Index index)
 		{
 			if (is_deleted(index))
 				return;
@@ -267,7 +337,7 @@ namespace Pools
 			++references[index];
 		}
 
-		void deref(Index index)
+		void deref(const Index index)
 		{
 			if (is_deleted(index))
 				return;
@@ -283,28 +353,30 @@ namespace Pools
 					first_deleted = index;
 
 				--num_allocated;
+
+				const Meta::Information* info = Meta::Get(type);
+
+				Meta::GetDestructor(type)(View(get(index), *info, Meta::kQualifier_Reference));
+
+				std::fill(&data[size_t(index) * info->size], &data[size_t(index + 1) * info->size], u8());
 			}
 		}
 
-		[[nodiscard]] bool is_valid(Index index) const
+		[[nodiscard]] bool is_valid(const Index index) const
 		{
 			return index > kInvalidIndex && size_t(index) < deleted_jump_table.size();
 		}
 
-		void* get(Index index)
+		void* get(const Index index)
 		{
 			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
 		}
 
-		[[nodiscard]] bool is_deleted(Index index) const
+		[[nodiscard]] bool is_deleted(const Index index) const
 		{
-			const bool valid = is_valid(index);
-
 			// The first deleted element will have the invalid index as its next jump index
 			// so we need to check for that by seeing if this index is that one
-			const bool deleted = deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
-
-			return valid && deleted;
+			return !is_valid(index) || deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
 		}
 
 	private:
@@ -319,53 +391,14 @@ namespace Pools
 		Meta::Index type;
 	};
 
-	Pool* get_pool(Meta::Index type)
-	{
-		static std::vector<Pool> pools;
-		static std::vector<bool> used;
-
-		if (!Meta::Valid(type))
-			return nullptr;
-
-		if (size_t(type) >= used.size())
-		{
-			used.resize(type + 1);
-			pools.resize(type + 1);
-		}
-
-		if (!used[type])
-		{
-			pools[type] = Pool(type);
-			used[type]  = true;
-		}
-
-		return &pools[type];
-	}
-
 	class Heap
 	{
 	public:
-		struct Range
-		{
-			Index start;
-			Index end;
-
-			[[nodiscard]] size_t size() const { return size_t(end - start); }
-		};
-
-		struct RangeComparator
-		{
-			bool operator()(const Range& lhs, const Range& rhs) const
-			{
-				return lhs.size() < rhs.size();
-			}
-		};
-
-		Heap(Meta::Index type_index = kInvalidIndex)
+		explicit Heap(const Meta::Index type_index = Meta::kInvalidType)
 			: type(type_index)
 		{}
 
-		Range alloc(size_t size)
+		Range alloc(const size_t size)
 		{
 			Range result(kInvalidIndex, kInvalidIndex);
 
@@ -376,6 +409,7 @@ namespace Pools
 					const Meta::Information* info = Meta::Get(type);
 
 					data.resize((num_allocated + size) * info->size, u8(0));
+					used.resize(num_allocated + size, true);
 
 					result.start = Index(num_allocated);
 					result.end = result.start + Index(size);
@@ -384,23 +418,45 @@ namespace Pools
 				{
 					result = queue.top();
 					queue.pop();
+					std::fill(std::next(used.begin(), result.start), std::next(used.begin(), result.end), true);
 				}
 			}
 			else
-#ifdef _DEBUG
+#if CMAKE_BUILD_TYPE == Debug
 				assert(!"Ran out of memory!");
 #else
 				std::abort();
 #endif
 
 			if (result.start != kInvalidIndex && result.end != kInvalidIndex)
+			{
 				num_allocated += size;
+
+
+			}
 
 			return result;
 		}
 
+		void free(const Range range)
+		{
+			if (range.empty())
+				return;
+
+			std::fill(std::next(used.begin(), range.start), std::next(used.begin(), range.end), false);
+			queue.push(range);
+
+			num_allocated -= range.size();
+		}
+
+		void* get(const Index index)
+		{
+			return used[index] ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
+		}
+
 	private:
 		std::vector<u8> data;
+		std::vector<bool> used;
 		std::priority_queue<Range, std::deque<Range>, RangeComparator> queue;
 
 		size_t num_allocated = 0;
@@ -411,38 +467,36 @@ namespace Pools
 
 namespace Meta
 {
-	Handle::Handle(Handle& other)
-		: view(other.view)
-		, index(other.index)
-	{
-		Pools::get_pool(view.type)->ref(index);
-	}
-
 	inline Handle::Handle(const Handle& other)
 		: view(other.view)
 		, index(other.index)
 	{
-		Pools::get_pool(view.type)->ref(index);
+		if (!view.is_in_place_primitive())
+			Memory::get_allocator<Memory::Pool>(view.type)->ref(index);
 	}
 
 	Handle::Handle(Handle&& other) noexcept
-		: view(std::move(other.view))
-		, index(std::move(other.index))
+		: view(other.view)
+		, index(other.index)
 	{
 		other.invalidate();
 	}
 
 	Handle::Handle(const Information& info)
-		: view(Meta::View())
-		, index(Pools::kInvalidIndex)
 	{
-		index = Pools::get_pool(info.index)->alloc();
-		view = Meta::View(Pools::get_pool(info.index)->get(index), info);
+		index = Memory::get_allocator<Memory::Pool>(info.index)->alloc(Spandle());
+		view = Meta::View(Memory::get_allocator<Memory::Pool>(info.index)->get(index), info, kQualifier_Reference);
 	}
 
-	Handle::Handle(View v)
+	Handle::Handle(const Information& info, const Spandle& arguments)
+	{
+		index = Memory::get_allocator<Memory::Pool>(info.index)->alloc(arguments);
+		view = Meta::View(Memory::get_allocator<Memory::Pool>(info.index)->get(index), info, kQualifier_Reference);
+	}
+
+	Handle::Handle(const View v)
 		: view(v)
-		, index(Pools::kInvalidIndex)
+		, index(Memory::kInvalidIndex)
 	{}
 
 	Handle::~Handle()
@@ -454,13 +508,12 @@ namespace Meta
 	{
 		if (this != &other)
 		{
-			if (*this)
-				destroy();
+			destroy();
 
 			view = other.view;
 			index = other.index;
 
-			Pools::get_pool(view.type)->ref(index);
+			Memory::get_allocator<Memory::Pool>(view.type)->ref(index);
 		}
 
 		return *this;
@@ -470,8 +523,7 @@ namespace Meta
 	{
 		if (this != &other)
 		{
-			if (*this)
-				destroy();
+			destroy();
 
 			view = other.view;
 			index = other.index;
@@ -489,12 +541,12 @@ namespace Meta
 
 	bool Handle::valid() const
 	{
-		return view.valid() && index != Pools::kInvalidIndex;
+		return view.valid() && index != Memory::kInvalidIndex;
 	}
 
-	bool Handle::is(const Information& info) const
+	bool Handle::is(const Information& info, const Qualifier qualifier_flags) const
 	{
-		return view.is(info);
+		return view.is(info, qualifier_flags);
 	}
 
 	View Handle::peek() const
@@ -505,49 +557,70 @@ namespace Meta
 	void Handle::invalidate()
 	{
 		view = Meta::View();
-		index = Pools::kInvalidIndex;
+		index = Memory::kInvalidIndex;
 	}
 
 	void Handle::destroy()
 	{
-		if (!valid())
+		if (view.is_in_place_primitive() || !valid())
 			return;
 
-		Pools::get_pool(view.type)->deref(index);
+		Memory::get_allocator<Memory::Pool>(view.type)->deref(index);
 		invalidate();
 	}
 
-	Spandle::Spandle(size_t num_handles)
-		: pimpl()
+	Spandle::Spandle(const size_t num_handles)
+		: list()
 	{
 		if (num_handles > 0)
-		{
-			pimpl = std::vector<Meta::Handle>();
-			pimpl.as<std::vector<Meta::Handle>>().resize(num_handles);
-		}
+			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles);
 	}
 
-	Handle& Spandle::operator[](size_t index)
+	Spandle::~Spandle()
 	{
-		return pimpl.as<std::vector<Meta::Handle>>()[index];
+		Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->free(list);
 	}
 
-	Handle Spandle::operator[](size_t index) const
+	Handle& Spandle::operator[](const Memory::Index index)
 	{
-		return pimpl.as<std::vector<Meta::Handle>>()[index];
+		assert(list.is_valid(index));
+		auto* const result = static_cast<Handle* const>(Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->get(index));
+		assert(result);
+		return *result;
+	}
+
+	Handle Spandle::operator[](const Memory::Index index) const
+	{
+		assert(list.is_valid(index));
+		const auto* const result = static_cast<const Handle* const>(Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->get(index));
+		assert(result);
+		return *result;
 	}
 
 	size_t Spandle::size() const
 	{
-		if (!pimpl.valid())
-			return 0;
-		return pimpl.as<std::vector<Meta::Handle>>().size();
+		return list.size();
 	}
 
 	bool Spandle::empty() const
 	{
-		if (!pimpl.valid())
-			return true;
-		return pimpl.as<std::vector<Meta::Handle>>().empty();
+		return list.empty();
+	}
+
+	FunctionSignature Spandle::get_function_signature(ParameterArray& memory) const
+	{
+		for (Memory::Index i = 0; i < size(); ++i)
+		{
+			View view = (*this)[i].view;
+
+			if (view.is_in_place_primitive())
+				memory[i].first = std::abs(view.type) + View::kByValue_u8;
+			else
+				memory[i].first = view.type;
+
+			memory[i].second = view.qualifiers;
+		}
+
+		return { reinterpret_cast<const char*>(&memory), size() * sizeof(Parameter) };
 	}
 }
