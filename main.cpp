@@ -13,8 +13,6 @@ int main()
 {
 	Meta::DumpInfo();
 
-	auto span = Meta::Spandle(3);
-
 	auto b = Meta::Handle(true);
 	Meta::Handle b2 = b;
 	const auto b3 = Meta::Handle::Create<Foo>(Meta::Spandle());
@@ -25,18 +23,17 @@ int main()
 
 	bool truthy = true;
 
-	span[0] = Meta::Handle(&truthy);
-	span[1] = 34;
-	span[2] = 3.14;
+	auto span = Meta::Spandle(Meta::Handle(&truthy), 34, 3.14);
+	// span[4] = 10; // Assert test
 
-	const Meta::Method method = Meta::FromMethod(&Meta::Handle::valid);
+	const Meta::Method method = Meta::FromMethod<Meta::Handle, &Meta::Handle::valid, bool>();
 
 	std::cout << std::boolalpha << method(Meta::View(b), Meta::Spandle()).as<bool>() << std::endl;
 
 	Foo foo;
 	foo.x = 1;
 
-	const Meta::Member member = Meta::FromMember(&Foo::x);
+	const Meta::Member member = Meta::FromMember<Foo, &Foo::x, decltype(Foo::x)>();
 
 	std::cout << member(Meta::View(foo)).as<int>() << std::endl;
 

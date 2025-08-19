@@ -1,3 +1,27 @@
+/*
+MIT License
+
+Copyright (c) 2025 Ben Kurtin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #include "Meta.h"
 
 #include <algorithm>
@@ -28,6 +52,235 @@ namespace Meta
 	static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
 	static auto destructors = PreallocateContainer<std::vector<Destructor>>();
 	static auto assigners = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Assigner>>>();
+}
+
+META(u8,   AddPOD<Type>());
+META(u16,  AddPOD<Type>());
+META(u32,  AddPOD<Type>());
+META(u64,  AddPOD<Type>());
+META(i8,   AddPOD<Type>());
+META(i16,  AddPOD<Type>());
+META(i32,  AddPOD<Type>());
+META(i64,  AddPOD<Type>());
+META(f32,  AddPOD<Type>());
+META(f64,  AddPOD<Type>());
+META(bool, AddPOD<Type>());
+
+META_AS(Meta::View,   View,   AddPOD<Type>());
+META_AS(Meta::Handle, Handle, AddPOD<Type>());
+
+namespace Memory
+{
+	static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
+
+	template<typename T>
+	T* get_allocator(const Meta::Index type)
+	{
+		static std::vector<T> spaces;
+		static std::vector<bool> used;
+
+		if (!Meta::Valid(type))
+			return nullptr;
+
+		if (size_t(type) >= used.size())
+		{
+			used.resize(type + 1);
+			spaces.resize(type + 1);
+		}
+
+		if (!used[type])
+		{
+			spaces[type] = T(type);
+			used[type]  = true;
+		}
+
+		return &spaces[type];
+	}
+
+	class Pool
+	{
+	public:
+		explicit Pool(const Meta::Index type_index = Meta::kInvalidType)
+			: type(type_index)
+		{}
+
+		Index alloc(const Meta::Spandle& arguments)
+		{
+			const Meta::Information* info = Meta::Get(type);
+			Index index = kInvalidIndex;
+
+			if (last_deleted != kInvalidIndex)
+			{
+				index = last_deleted;
+				const Index next_to_recycle = deleted_jump_table[last_deleted];
+
+				// Indicate that this element is in use again
+				deleted_jump_table[last_deleted] = kInvalidIndex;
+				// Make the element recycled before this one the next up to be reused
+				last_deleted = next_to_recycle;
+
+				// If we've reached the first index deleted, mark it as no longer being deleted
+				if (first_deleted == index)
+					first_deleted = kInvalidIndex;
+			}
+			else if (deleted_jump_table.size() < kMaxSize)
+			{
+				data.resize((num_allocated + 1) * info->size, u8(0));
+				deleted_jump_table.push_back(kInvalidIndex);
+				references.push_back(0);
+
+				index = Index(deleted_jump_table.size() - 1);
+			}
+			else
+				Program::Assert(false, MK_ASSERT_STATS_CSTR, "Ran out of memory!");
+
+			if (index != kInvalidIndex)
+			{
+				++num_allocated;
+				ref(index);
+
+				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
+				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
+				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
+				constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
+			}
+
+			return index;
+		}
+
+		void ref(const Index index)
+		{
+			if (is_deleted(index))
+				return;
+
+			++references[index];
+		}
+
+		void deref(const Index index)
+		{
+			if (is_deleted(index))
+				return;
+
+			--references[index];
+
+			if (references[index] == 0)
+			{
+				deleted_jump_table[index] = last_deleted;
+				last_deleted = index;
+
+				if (first_deleted == kInvalidIndex)
+					first_deleted = index;
+
+				--num_allocated;
+
+				const Meta::Information* info = Meta::Get(type);
+
+				Meta::GetDestructor(type)(View(get(index), *info, Meta::kQualifier_Reference));
+
+				std::fill(&data[size_t(index) * info->size], &data[size_t(index + 1) * info->size], u8());
+			}
+		}
+
+		[[nodiscard]] bool is_valid(const Index index) const
+		{
+			return index > kInvalidIndex && size_t(index) < deleted_jump_table.size();
+		}
+
+		void* get(const Index index)
+		{
+			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
+		}
+
+		[[nodiscard]] bool is_deleted(const Index index) const
+		{
+			// The first deleted element will have the invalid index as its next jump index
+			// so we need to check for that by seeing if this index is that one
+			return !is_valid(index) || deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
+		}
+
+	private:
+		std::vector<u8> data;
+		std::vector<size_t> references;
+		std::vector<Index> deleted_jump_table;
+
+		Index last_deleted = kInvalidIndex;
+		Index first_deleted = kInvalidIndex;
+		size_t num_allocated = 0;
+
+		Meta::Index type;
+	};
+
+	class Heap
+	{
+	public:
+		explicit Heap(const Meta::Index type_index = Meta::kInvalidType)
+			: type(type_index)
+		{}
+
+		Range alloc(const size_t size)
+		{
+			Range result(kInvalidIndex, kInvalidIndex);
+
+			if (queue.size() < kMaxSize)
+			{
+				if (queue.empty() || queue.top().size() < size)
+				{
+					const Meta::Information* info = Meta::Get(type);
+
+					data.resize((num_allocated + size) * info->size, u8(0));
+					used.resize(num_allocated + size, true);
+
+					result.start = Index(num_allocated);
+					result.end = result.start + Index(size);
+				}
+				else
+				{
+					result = queue.top();
+					queue.pop();
+					std::fill(std::next(used.begin(), result.start), std::next(used.begin(), result.end), true);
+				}
+			}
+			else
+				Program::Assert(false, MK_ASSERT_STATS_CSTR, "Ran out of memory!");
+
+			if (result.start != kInvalidIndex && result.end != kInvalidIndex)
+			{
+				num_allocated += size;
+
+				// Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
+				// const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
+				// const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
+				// constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
+			}
+
+			return result;
+		}
+
+		void free(const Range range)
+		{
+			if (range.empty())
+				return;
+
+			std::fill(std::next(used.begin(), range.start), std::next(used.begin(), range.end), false);
+			queue.push(range);
+
+			num_allocated -= range.size();
+		}
+
+		void* get(const Index index)
+		{
+			return used[index] ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
+		}
+
+	private:
+		std::vector<u8> data;
+		std::vector<bool> used;
+		std::priority_queue<Range, std::deque<Range>, RangeComparator> queue;
+
+		size_t num_allocated = 0;
+
+		Meta::Index type;
+	};
 }
 
 namespace Meta
@@ -72,13 +325,19 @@ namespace Meta
 
 	const Information* Get(const Index type)
 	{
-		assert(type > kInvalidType && type <= type_counter && "Type index out of bounds!");
+		Program::Assert(type > kInvalidType && type <= type_counter, MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		return &infos[type];
 	}
 
-	bool Valid(Index type_index)
+	bool Valid(const Index type_index)
 	{
 		return type_index > kInvalidType && type_index <= type_counter;
+	}
+
+	void Spandle::allocate(const size_t num_handles)
+	{
+		if (num_handles > 0)
+			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles);
 	}
 
 	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited)
@@ -239,244 +498,7 @@ namespace Meta
 	}
 
 	bool View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
-}
 
-META(u8,   AddPOD<Type>());
-META(u16,  AddPOD<Type>());
-META(u32,  AddPOD<Type>());
-META(u64,  AddPOD<Type>());
-META(i8,   AddPOD<Type>());
-META(i16,  AddPOD<Type>());
-META(i32,  AddPOD<Type>());
-META(i64,  AddPOD<Type>());
-META(f32,  AddPOD<Type>());
-META(f64,  AddPOD<Type>());
-META(bool, AddPOD<Type>());
-
-META_AS(Meta::View,   View,   AddPOD<Type>());
-META_AS(Meta::Handle, Handle, AddPOD<Type>());
-
-namespace Memory
-{
-	static constexpr size_t kMaxSize = size_t(std::numeric_limits<Index>::max()) + 1;
-
-	template<typename T>
-	T* get_allocator(const Meta::Index type)
-	{
-		static std::vector<T> spaces;
-		static std::vector<bool> used;
-
-		if (!Meta::Valid(type))
-			return nullptr;
-
-		if (size_t(type) >= used.size())
-		{
-			used.resize(type + 1);
-			spaces.resize(type + 1);
-		}
-
-		if (!used[type])
-		{
-			spaces[type] = T(type);
-			used[type]  = true;
-		}
-
-		return &spaces[type];
-	}
-
-	class Pool
-	{
-	public:
-		explicit Pool(const Meta::Index type_index = Meta::kInvalidType)
-			: type(type_index)
-		{}
-
-		Index alloc(const Meta::Spandle& arguments)
-		{
-			const Meta::Information* info = Meta::Get(type);
-			Index index = kInvalidIndex;
-
-			if (last_deleted != kInvalidIndex)
-			{
-				index = last_deleted;
-				const Index next_to_recycle = deleted_jump_table[last_deleted];
-
-				// Indicate that this element is in use again
-				deleted_jump_table[last_deleted] = kInvalidIndex;
-				// Make the element recycled before this one the next up to be reused
-				last_deleted = next_to_recycle;
-
-				// If we've reached the first index deleted, mark it as no longer being deleted
-				if (first_deleted == index)
-					first_deleted = kInvalidIndex;
-			}
-			else if (deleted_jump_table.size() < kMaxSize)
-			{
-				data.resize((num_allocated + 1) * info->size, u8(0));
-				deleted_jump_table.push_back(kInvalidIndex);
-				references.push_back(0);
-
-				index = Index(deleted_jump_table.size() - 1);
-			}
-			else
-#if CMAKE_BUILD_TYPE == Debug
-				assert(!"Ran out of memory!");
-#else
-				std::abort();
-#endif
-
-			if (index != kInvalidIndex)
-			{
-				++num_allocated;
-				ref(index);
-
-				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
-				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
-				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
-				constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
-			}
-
-			return index;
-		}
-
-		void ref(const Index index)
-		{
-			if (is_deleted(index))
-				return;
-
-			++references[index];
-		}
-
-		void deref(const Index index)
-		{
-			if (is_deleted(index))
-				return;
-
-			--references[index];
-
-			if (references[index] == 0)
-			{
-				deleted_jump_table[index] = last_deleted;
-				last_deleted = index;
-
-				if (first_deleted == kInvalidIndex)
-					first_deleted = index;
-
-				--num_allocated;
-
-				const Meta::Information* info = Meta::Get(type);
-
-				Meta::GetDestructor(type)(View(get(index), *info, Meta::kQualifier_Reference));
-
-				std::fill(&data[size_t(index) * info->size], &data[size_t(index + 1) * info->size], u8());
-			}
-		}
-
-		[[nodiscard]] bool is_valid(const Index index) const
-		{
-			return index > kInvalidIndex && size_t(index) < deleted_jump_table.size();
-		}
-
-		void* get(const Index index)
-		{
-			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
-		}
-
-		[[nodiscard]] bool is_deleted(const Index index) const
-		{
-			// The first deleted element will have the invalid index as its next jump index
-			// so we need to check for that by seeing if this index is that one
-			return !is_valid(index) || deleted_jump_table[index] != kInvalidIndex || index == first_deleted;
-		}
-
-	private:
-		std::vector<u8> data;
-		std::vector<size_t> references;
-		std::vector<Index> deleted_jump_table;
-
-		Index last_deleted = kInvalidIndex;
-		Index first_deleted = kInvalidIndex;
-		size_t num_allocated = 0;
-
-		Meta::Index type;
-	};
-
-	class Heap
-	{
-	public:
-		explicit Heap(const Meta::Index type_index = Meta::kInvalidType)
-			: type(type_index)
-		{}
-
-		Range alloc(const size_t size)
-		{
-			Range result(kInvalidIndex, kInvalidIndex);
-
-			if (queue.size() < kMaxSize)
-			{
-				if (queue.empty() || queue.top().size() < size)
-				{
-					const Meta::Information* info = Meta::Get(type);
-
-					data.resize((num_allocated + size) * info->size, u8(0));
-					used.resize(num_allocated + size, true);
-
-					result.start = Index(num_allocated);
-					result.end = result.start + Index(size);
-				}
-				else
-				{
-					result = queue.top();
-					queue.pop();
-					std::fill(std::next(used.begin(), result.start), std::next(used.begin(), result.end), true);
-				}
-			}
-			else
-#if CMAKE_BUILD_TYPE == Debug
-				assert(!"Ran out of memory!");
-#else
-				std::abort();
-#endif
-
-			if (result.start != kInvalidIndex && result.end != kInvalidIndex)
-			{
-				num_allocated += size;
-
-
-			}
-
-			return result;
-		}
-
-		void free(const Range range)
-		{
-			if (range.empty())
-				return;
-
-			std::fill(std::next(used.begin(), range.start), std::next(used.begin(), range.end), false);
-			queue.push(range);
-
-			num_allocated -= range.size();
-		}
-
-		void* get(const Index index)
-		{
-			return used[index] ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
-		}
-
-	private:
-		std::vector<u8> data;
-		std::vector<bool> used;
-		std::priority_queue<Range, std::deque<Range>, RangeComparator> queue;
-
-		size_t num_allocated = 0;
-
-		Meta::Index type;
-	};
-}
-
-namespace Meta
-{
 	inline Handle::Handle(const Handle& other)
 		: view(other.view)
 		, index(other.index)
@@ -564,6 +586,11 @@ namespace Meta
 		return view;
 	}
 
+	Handle::operator View() const
+	{
+		return peek();
+	}
+
 	void Handle::invalidate()
 	{
 		view = Meta::View();
@@ -579,13 +606,6 @@ namespace Meta
 		invalidate();
 	}
 
-	Spandle::Spandle(const size_t num_handles)
-		: list()
-	{
-		if (num_handles > 0)
-			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles);
-	}
-
 	Spandle::~Spandle()
 	{
 		Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->free(list);
@@ -593,17 +613,17 @@ namespace Meta
 
 	Handle& Spandle::operator[](const Memory::Index index)
 	{
-		assert(list.is_valid(index));
+		Program::Assert(list.is_valid(index), MK_ASSERT_STATS_CSTR, "Out-of-bounds!");
 		auto* const result = static_cast<Handle* const>(Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->get(index));
-		assert(result);
+		Program::Assert(result, MK_ASSERT_STATS_CSTR, "Could not create Handle!");
 		return *result;
 	}
 
 	Handle Spandle::operator[](const Memory::Index index) const
 	{
-		assert(list.is_valid(index));
+		Program::Assert(list.is_valid(index), MK_ASSERT_STATS_CSTR, "Out-of-bounds!");
 		const auto* const result = static_cast<const Handle* const>(Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->get(index));
-		assert(result);
+		Program::Assert(result, MK_ASSERT_STATS_CSTR, "Could not create Handle!");
 		return *result;
 	}
 

@@ -4,4 +4,7 @@ project(VariantV4)
 set(CMAKE_CXX_STANDARD 20)
 
 add_executable(VariantV4 main.cpp Meta.cpp
-        MetaConfig.h)
+        MetaConfig.h
+        Program.cpp
+        Program.h
+        ProgramConfig.h)

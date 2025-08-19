@@ -1,3 +1,27 @@
+/*
+MIT License
+
+Copyright (c) 2025 Ben Kurtin
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+*/
+
 #ifndef META_H
 #define META_H
 
@@ -9,6 +33,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "Program.h"
 
 using u8  = uint8_t;
 using u16 = uint16_t;
@@ -90,7 +115,15 @@ namespace Meta
 	static bool RegistrationSuccessful(Args... args)
 	{
 		if constexpr (sizeof...(args) > 0)
+		{
+			([&]()
+			{
+				Program::Assert(args, MK_ASSERT_STATS_CSTR, "Error in registration process!");
+
+			}(), ...);
+
 			return (... && args);
+		}
 		return true;
 	}
 
@@ -109,15 +142,20 @@ namespace Meta
 		View(View&&) = default;
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
+		explicit View(const T* ptr)
+			: View(static_cast<void*>(const_cast<T*>(ptr)), Info<T>(), QualifiersOf<T>)
+		{}
+
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		explicit View(T* ptr)
-			: View(ptr, Info<T>(), QualifiersOf<T>)
+			: View(static_cast<void*>(ptr), Info<T>(), QualifiersOf<T>)
 		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		explicit View(T& ref)
 			: View(&ref)
 		{
-			qualifiers = QualifiersOf<T>;
+			qualifiers = QualifiersOf<T> | kQualifier_Reference;
 		}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
@@ -158,8 +196,8 @@ namespace Meta
 		template<typename T>
 		std::remove_cvref_t<T>* raw() const
 		{
-			assert(valid());
-			assert(is<T>());
+			Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "Not a valid View!");
+			Program::Assert(is<T>(), MK_ASSERT_STATS_CSTR, "Not the correct type!");
 
 			if constexpr (kIsPrimitive<T>)
 			{
@@ -181,7 +219,7 @@ namespace Meta
 		template<typename T> requires (kIsPrimitive<T>)
 		T primitive() const
 		{
-			assert(is_in_place_primitive());
+			Program::Assert(is_in_place_primitive(), MK_ASSERT_STATS_CSTR, "Not an in-place primitive View!");
 			return as<T>();
 		}
 
@@ -266,6 +304,16 @@ namespace Meta
 		explicit Handle(View v);
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
+		explicit Handle(const T* value)
+			: view(View(value))
+		{}
+
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
+		explicit Handle(T* value)
+			: view(View(value))
+		{}
+
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
 		explicit Handle(const T& value)
 			: Handle(Meta::Info<T>(), Spandle(&value))
 		{}
@@ -279,11 +327,6 @@ namespace Meta
 			else
 				*this = Handle(Info<T>(), Spandle(&value));
 		}
-
-		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
-		explicit Handle(T* value)
-			: view(View(value))
-		{}
 
 		template<typename T>
 		static Handle Create(const Spandle& arguments)
@@ -318,7 +361,7 @@ namespace Meta
 		template<typename T>
 		[[nodiscard]] T as() const
 		{
-			assert(is<T>());
+			Program::Assert(is<T>(), MK_ASSERT_STATS_CSTR, "Not the correct type!");
 			return view.as<T>();
 		}
 
@@ -326,6 +369,8 @@ namespace Meta
 		T primitive() const { return view.primitive<T>(); }
 
 		[[nodiscard]] View peek() const;
+
+		explicit operator View() const;
 
 	private:
 		View view = View();
@@ -340,26 +385,25 @@ namespace Meta
 	class Spandle
 	{
 	public:
-		explicit Spandle(size_t num_handles = 0);
+		Spandle() = default;
 
 		template<typename... Args>
-		static Spandle Create(Args... args)
+		explicit Spandle(Args... args)
 		{
-			auto result = Spandle(sizeof...(Args));
 			Memory::Index index = 0;
+
+			allocate(sizeof...(Args));
 
 			([&]()
 			{
 				if constexpr (kIsPrimitive<Args>)
-					result[index] = args;
+					(*this)[index] = args;
 				else
-					result[index] = Handle(args);
+					(*this)[index] = Handle(args);
 
 				++index;
 
 			}(), ...);
-
-			return result;
 		}
 
 		Spandle(const Spandle&) = default;
@@ -379,6 +423,7 @@ namespace Meta
 
 	private:
 		Memory::Range list;
+		void allocate(const size_t num_handles);
 	};
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -424,105 +469,174 @@ namespace Meta
 	// Methods
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using Method = std::function<Handle (const View, const Spandle&)>;
+	using Method = Handle (*)(const View, const Spandle&);
 
-	template<typename T, typename Return, typename MethodPtr, typename Tuple, std::size_t... Index>
-	static Method FromMethodImpl(MethodPtr method, std::index_sequence<Index...>)
+	template<typename T, auto MethodPtr, typename Return, bool IsConst, typename Tuple, std::size_t... Index> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static Method FromMethodImpl(std::index_sequence<Index...>)
 	{
-		return [method](const View view, const Spandle& parameters) -> Handle
+		return [](const View view, const Spandle& parameters) -> Handle
 		{
 			Handle result;
 
 			if constexpr (sizeof...(Index) > 0)
 			{
-				assert(parameters.size() == sizeof...(Index) && "Mismatched parameter number!");
+				Program::Assert(parameters.size() == sizeof...(Index), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
 
 				if constexpr (std::is_void_v<Return>)
-					std::invoke(method, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+				{
+					if constexpr (IsConst)
+					{
+						if (view.is<const T>())
+							std::invoke(MethodPtr, view.as<const T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+						else
+							std::invoke(MethodPtr, view.as<const T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+					}
+					else
+					{
+						if (view.is<T>())
+							std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+						else
+							std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+					}
+				}
 				else
-					result = Handle(std::invoke(method, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+				{
+					if constexpr (IsConst)
+					{
+						if (view.is<const T>())
+							result = Handle(std::invoke(MethodPtr, view.as<const T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+						else
+							result = Handle(std::invoke(MethodPtr, view.as<const T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+					}
+					else
+					{
+						if (view.is<T>())
+							result = Handle(std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+						else
+							result = Handle(std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+					}
+				}
 			}
 			else
 			{
-				assert(parameters.empty() && "Method takes no parameters!");
+				Program::Assert(parameters.empty(), MK_ASSERT_STATS_CSTR, "Method takes no parameters!");
 
 				if constexpr (std::is_void_v<Return>)
-					(view.as<T>().*method)();
+				{
+					if constexpr (IsConst)
+					{
+						if (view.is<const T>())
+							(view.as<const T>().*MethodPtr)();
+						else
+							(view.as<const T&>().*MethodPtr)();
+					}
+					else
+					{
+						if (view.is<T>())
+							(view.as<T>().*MethodPtr)();
+						else
+							(view.as<T&>().*MethodPtr)();
+					}
+				}
 				else
-					result = Handle((view.as<T>().*method)());
+				{
+					if constexpr (IsConst)
+					{
+						if (view.is<const T>())
+							result = Handle((view.as<const T>().*MethodPtr)());
+						else
+							result = Handle((view.as<const T&>().*MethodPtr)());
+					}
+					else
+					{
+						if (view.is<T>())
+							result = Handle((view.as<T>().*MethodPtr)());
+						else
+							result = Handle((view.as<T&>().*MethodPtr)());
+					}
+				}
 			}
 
 			return result;
 		};
 	}
 
-	template<typename T, typename Return, typename... Args>
-	static Method FromMethod(Return (T::*method)(Args...))
+	template<typename T, auto MethodPtr, typename Return, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static Method FromMethod()
 	{
-		return FromMethodImpl<T, Return, Return (T::*)(Args...), std::tuple<Args...>>(method, std::index_sequence_for<Args...>{});
-	}
-
-	template<typename T, typename Return, typename... Args>
-	static Method FromMethod(Return (T::*method)(Args...) const)
-	{
-		return FromMethodImpl<T, Return, Return (T::*)(Args...) const, std::tuple<Args...>>(method, std::index_sequence_for<Args...>{});
+		static_assert(std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...)> || std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...) const>, "MethodPtr is not a method pointer!");
+		return FromMethodImpl<T, MethodPtr, Return, std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...) const>, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
 	// Functions
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using Function = std::function<Handle (const Spandle&)>;
+	using Function = Handle (*)(const Spandle&);
 
-	template<typename Return, typename FunctionPtr, typename Tuple, std::size_t... Index>
-	static Function FromFunctionImpl(FunctionPtr function, std::index_sequence<Index...>)
+	template<auto FunctionPtr, typename Return, typename Tuple, std::size_t... Index>
+	static Function FromFunctionImpl(std::index_sequence<Index...>)
 	{
-		return [function](const Spandle& parameters) -> Handle
+		return [](const Spandle& parameters) -> Handle
 		{
 			Handle result;
 
 			if constexpr (sizeof...(Index) > 0)
 			{
-				assert(parameters.size() == sizeof...(Index) && "Mismatched parameter number!");
+				Program::Assert(parameters.size() == sizeof...(Index), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
 
 				if constexpr (std::is_void_v<Return>)
-					std::invoke(function, parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+					(FunctionPtr)(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
 				else
-					result = Handle(std::invoke(function, parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+					result = Handle((FunctionPtr)(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
 			}
 			else
 			{
-				assert(parameters.empty() && "Method takes no parameters!");
+				Program::Assert(parameters.empty(), MK_ASSERT_STATS_CSTR, "Method takes no parameters!");
 
 				if constexpr (std::is_void_v<Return>)
-					(function)();
+					(FunctionPtr)();
 				else
-					result = Handle((function)());
+					result = Handle((FunctionPtr)());
 			}
 
 			return result;
 		};
 	}
 
-	template<typename Return, typename... Args>
-	static Function FromFunction(Return (*function)(Args...))
+	template<auto FunctionPtr, typename Return, typename... Args>
+	static Function FromFunction()
 	{
-		return FromFunctionImpl<Return, Return (*)(Args...), std::tuple<Args...>>(function, std::index_sequence_for<Args...>{});
+		static_assert(std::is_same_v<decltype(FunctionPtr), Return (*)(Args...)>, "FunctionPtr is not a function pointer!");
+		return FromFunctionImpl<FunctionPtr, Return, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
 	// Members
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using Member = std::function<Handle (const View)>;
+	using Member = Handle (*)(const View);
 
-	template<typename T, typename Return>
-	static Member FromMember(Return T::*member)
+	template<auto MemberPtr, typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static Member FromMemberImpl()
 	{
-		return [member](const View view) -> Handle
+		return [](const View view) -> Handle
 		{
-			return Handle(view.as<T>().*member);
+			if (view.is<T&>())
+				return Handle(view.as<T&>().*MemberPtr);
+			if (view.is<const T>())
+				return Handle(view.as<const T>().*MemberPtr);
+			if (view.is<const T&>())
+				return Handle(view.as<const T&>().*MemberPtr);
+			return Handle(view.as<T>().*MemberPtr);
 		};
+	}
+
+	template<typename T, auto MemberPtr, typename Return> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	static Member FromMember()
+	{
+		static_assert(std::is_same_v<decltype(MemberPtr), Return (T::*)>, "MemberPtr is not a member pointer!");
+		return FromMemberImpl<MemberPtr, T>();
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -531,25 +645,25 @@ namespace Meta
 
 	using Constructor = void (*)(const View, const Spandle&);
 
-	template<typename T, typename Tuple, std::size_t... Index>
+	template<typename T, typename Tuple, std::size_t... Index> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static Constructor FromCtorImpl(std::index_sequence<Index...>)
 	{
 		return [](const View view, const Spandle& parameters) -> void
 		{
 			if constexpr (sizeof...(Index) > 0)
 			{
-				assert(parameters.size() == sizeof...(Index) && "Mismatched parameter number!");
+				Program::Assert(parameters.size() == sizeof...(Index), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
 				new (view.raw<T&>()) T(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
 			}
 			else
 			{
-				assert(parameters.empty() && "Constructor takes no parameters!");
+				Program::Assert(parameters.empty(), MK_ASSERT_STATS_CSTR, "Constructor takes no parameters!");
 				new (view.raw<T&>()) T;
 			}
 		};
 	}
 
-	template<typename T, typename... Args>
+	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static Constructor FromCtor()
 	{
 		return FromCtorImpl<T, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
@@ -565,7 +679,7 @@ namespace Meta
 
 	extern Constructor GetConstructor(const Index type, const FunctionSignature signature);
 
-	template<typename T, typename... Args>
+	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static Constructor GetConstructor()
 	{
 		return GetConstructor(Info<T>().index, FromParameterList<Args...>());
@@ -613,7 +727,7 @@ namespace Meta
 	{
 		return [](const View view, const Spandle& parameters) -> View
 		{
-			assert(parameters.size() == size_t(1) && "Mismatched parameter number!");
+			Program::Assert(parameters.size() == size_t(1), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
 			view.as<T&>() = parameters[0].as<U>();
 			return view;
 		};
@@ -639,24 +753,24 @@ namespace Meta
 	// Math
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using UnaryMathOperator = View (*)(const View);
-	using BinaryMathOperator = View (*)(const View, const View);
+	using UnaryMathOperator = Handle (*)(const View);
+	using BinaryMathOperator = Handle (*)(const View, const View);
 
 	template<typename T>
 	static UnaryMathOperator FromPositive()
 	{
-		return [](const View view) -> View
+		return [](const View view) -> Handle
 		{
-			return View(+view.as<T>());
+			return Handle(+view.as<T>());
 		};
 	}
 
 	template<typename T>
 	static UnaryMathOperator FromNegative()
 	{
-		return [](const View view) -> View
+		return [](const View view) -> Handle
 		{
-			return View(-view.as<T>());
+			return Handle(-view.as<T>());
 		};
 	}
 
@@ -697,7 +811,7 @@ namespace Meta \
 			Meta::Index MetaIndex = Meta::Info<type>().index; \
 			using Type = std::remove_cvref_t<type>; \
 			bool result = Meta::RegistrationSuccessful(__VA_ARGS__); \
-			assert(result && "Error in meta registration process!"); \
+			Program::Assert(result, MK_ASSERT_STATS_CSTR, "Error in meta registration process!"); \
 			return result; \
 		}(); \
 }
