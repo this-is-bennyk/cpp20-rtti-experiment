@@ -26,8 +26,6 @@ SOFTWARE.
 
 #include <algorithm>
 #include <deque>
-#include <iomanip>
-#include <iostream>
 #include <iterator>
 #include <limits>
 #include <queue>
@@ -47,7 +45,7 @@ namespace Meta
 	}
 
 	static auto infos = PreallocateContainer<std::vector<Information>>();
-	static auto name_to_index = PreallocateContainer<std::unordered_map<std::string_view, Index>>();
+	static auto name_to_index = PreallocateContainer<std::unordered_map<Program::Name, Index>>();
 
 	static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
 	static auto destructors = PreallocateContainer<std::vector<Destructor>>();
@@ -285,7 +283,7 @@ namespace Memory
 
 namespace Meta
 {
-	const Information& Register(const std::string_view name, const size_t size)
+	const Information& Register(const Program::Name name, const size_t size)
 	{
 		Index index = kInvalidType;
 
@@ -313,7 +311,7 @@ namespace Meta
 		return infos[index];
 	}
 
-	Index Find(const std::string_view name)
+	Index Find(const Program::Name name)
 	{
 		const auto iterator = name_to_index.find(name);
 
@@ -385,6 +383,8 @@ namespace Meta
 
 	Constructor GetConstructor(const Index type, const FunctionSignature signature)
 	{
+		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
+		Program::Assert(constructors[type].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
 		return constructors[type][signature];
 	}
 
@@ -396,6 +396,8 @@ namespace Meta
 
 	Destructor GetDestructor(const Index type)
 	{
+		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
+		Program::Assert(destructors[type], MK_ASSERT_STATS_CSTR, "No destructor specified!");
 		return destructors[type];
 	}
 
@@ -412,10 +414,10 @@ namespace Meta
 
 	void DumpInfo()
 	{
-		static constexpr auto kLabel = "[Meta] ";
+		static constexpr auto kLabel = L"[Meta] ";
 
-		std::cout << kLabel << "-------------------- Meta --------------------" << std::endl;
-		std::cout << kLabel << "~~~~~ Type List ~~~~" << std::endl;
+		Program::Log::Std(kLabel) << L"-------------------- Meta --------------------" << std::endl;
+		Program::Log::Std(kLabel) << L"~~~~~ Type List ~~~~" << std::endl;
 
 		Index digits = 0;
 		Index type_counter_copy = type_counter;
@@ -428,12 +430,13 @@ namespace Meta
 
 		for (const Information& info : infos)
 		{
-			std::cout << kLabel << "Type ID: " << std::setfill('0') << std::setw(int(digits)) << info.index <<
-					" | Name: " << info.name;
+			Program::Log::Std(kLabel)
+				<< L"Type ID: " << std::setfill(L'0') << std::setw(int(digits)) << info.index
+				<< L" | Name: " << info.name;
 
 			if (info.num_bases > 0)
 			{
-				std::cout << " | Bases: ";
+				Program::Log::Std() << L" | Bases: ";
 
 				Index base_count = 0;
 
@@ -441,10 +444,10 @@ namespace Meta
 				{
 					if (info.bases[base_index])
 					{
-						std::cout << infos[base_index].name << " ";
+						Program::Log::Std() << infos[base_index].name << L" ";
 
 						if (base_count < info.num_bases - 1)
-							std::cout << ", ";
+							Program::Log::Std() << L", ";
 
 						++base_count;
 					}
@@ -454,11 +457,11 @@ namespace Meta
 			std::cout << std::endl;
 		}
 
-		std::cout << kLabel << "~~~~~ Type Stats ~~~~~" << std::endl;
-		std::cout << kLabel << "Number of types: " << type_counter << std::endl;
+		Program::Log::Std(kLabel) << L"~~~~~ Type Stats ~~~~~" << std::endl;
+		Program::Log::Std(kLabel) << L"Number of types: " << type_counter << std::endl;
 
 		if (size_t(type_counter) > kPreallocationAmount)
-			std::cout << kLabel << "Recommendation: Set kPreallocationAmount to " << type_counter << std::endl;
+			Program::Log::Std(kLabel) << L"Recommendation: Set kPreallocationAmount to " << type_counter << std::endl;
 	}
 
 	View::View(void* ptr, const Information& info, const Qualifier qualifier_flags)
@@ -482,7 +485,13 @@ namespace Meta
 	bool View::is(const Information& info, const Qualifier qualifier_flags) const
 	{
 		if (qualifier_flags != qualifiers && !is_in_place_primitive())
-			return bool((qualifier_flags & ~kQualifier_Constant) == qualifiers);
+		{
+			const bool can_allow_const = ((qualifiers & qualifier_flags) & kQualifier_Constant)  || !(qualifiers & kQualifier_Constant);
+			const bool can_allow_ref   = ((qualifiers & qualifier_flags) & kQualifier_Reference) || (qualifier_flags == kQualifier_Temporary) && (qualifiers & kQualifier_Reference);
+
+			if (!(can_allow_const && can_allow_ref))
+				return false;
+		}
 
 		if (is_in_place_primitive())
 			return (std::abs(type) + kByValue_u8) == info.index;

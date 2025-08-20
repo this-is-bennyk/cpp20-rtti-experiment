@@ -45,6 +45,8 @@ namespace Program
 	[[noreturn]]
 	void Panic()
 	{
+		Log::Err(L"Panic") << ErrorBuffer << std::endl;
+
 		#if MK_IS_PLATFORM_WINDOWS
 		MessageBoxW(nullptr, ErrorBuffer, MK_PROGRAM_NAME_WSTR L": Error", MB_ICONERROR | MB_OK | MB_DEFBUTTON1);
 		#endif
@@ -54,29 +56,32 @@ namespace Program
 			#if MK_IS_PLATFORM_WINDOWS
 			__debugbreak();
 			#endif
-			std::abort();
 		}
-		else
-			std::abort();
+
+		std::exit(-1);
 	}
 
 	void Assert(const bool statement, const wchar_t* func, const wchar_t* file, const wchar_t* line, const wchar_t* message)
 	{
-		if (!statement)
+		if constexpr (kIsDebug || !kTrimDebugInfo)
 		{
-			swprintf_s(ErrorBuffer, L"In %s, at line %s of %s: %s", func, line, file, message);
-			Panic();
+			if (!statement)
+			{
+				swprintf_s(ErrorBuffer, L"In %s, at line %s of %s: %s", func, line, file, message);
+				Panic();
+			}
 		}
 	}
 
 	void Assert(const bool statement, const char* func, const char* file, const char* line, const char* message)
 	{
-		if (!statement)
+		if constexpr (kIsDebug || !kTrimDebugInfo)
 		{
-			swprintf_s(ErrorBuffer, L"In %S, at line %S of %S: %S", func, line, file, message);
-			Panic();
+			if (!statement)
+			{
+				swprintf_s(ErrorBuffer, L"In %S, at line %S of %S: %S", func, line, file, message);
+				Panic();
+			}
 		}
 	}
-
-
 }

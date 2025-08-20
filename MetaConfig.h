@@ -7,7 +7,7 @@
 
 namespace Meta
 {
-	static constexpr size_t kPreallocationAmount = 16;
+	static constexpr std::size_t kPreallocationAmount = 16;
 }
 
 #endif //METACONFIG_H

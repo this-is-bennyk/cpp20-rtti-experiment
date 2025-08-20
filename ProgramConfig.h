@@ -48,7 +48,20 @@ SOFTWARE.
 #define MK_IS_DEBUG   CMAKE_BUILD_TYPE == Debug
 #define MK_IS_RELEASE CMAKE_BUILD_TYPE == Release
 
-#define MK_IS_PLATFORM_WINDOWS CMAKE_BUILD_TYPE == Win32 || CMAKE_BUILD_TYPE == Win64
+#define MK_IS_PLATFORM_WINDOWS (CMAKE_BUILD_TYPE == Win32 || CMAKE_BUILD_TYPE == Win64)
+#define MK_IS_PLATFORM_MAC CMAKE_BUILD_TYPE == mac
+#define MK_IS_PLATFORM_LINUX CMAKE_BUILD_TYPE == linux
+
+#define MK_IS_PLATFORM_ANDROID CMAKE_BUILD_TYPE == Android
+#define MK_IS_PLATFORM_APPLE CMAKE_BUILD_TYPE == apple
+#define MK_IS_PLATFORM_IOS CMAKE_BUILD_TYPE == ios
+#define MK_IS_PLATFORM_WATCHOS CMAKE_BUILD_TYPE == watchos
+
+#define MK_IS_PLATFORM_PS CMAKE_BUILD_TYPE == ps
+#define MK_IS_PLATFORM_NT CMAKE_BUILD_TYPE == nt
+#define MK_IS_PLATFORM_EMSCRIPTEN CMAKE_BUILD_TYPE == em
+
+#define MK_TRIM_DEBUG_INFO 0
 
 // ---------------------------------------------------------------------------------------------------------------------
 // Assert Helper Macros
@@ -139,6 +152,8 @@ namespace Program
 		L"Unknown Platform"
 		#endif
 		;
+
+	static constexpr bool kTrimDebugInfo = MK_TRIM_DEBUG_INFO;
 }
 
 #endif
