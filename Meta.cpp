@@ -487,7 +487,7 @@ namespace Meta
 		if (qualifier_flags != qualifiers && !is_in_place_primitive())
 		{
 			const bool can_allow_const = ((qualifiers & qualifier_flags) & kQualifier_Constant)  || !(qualifiers & kQualifier_Constant);
-			const bool can_allow_ref   = ((qualifiers & qualifier_flags) & kQualifier_Reference) || (qualifier_flags == kQualifier_Temporary) && (qualifiers & kQualifier_Reference);
+			const bool can_allow_ref   = ((qualifiers & qualifier_flags) & kQualifier_Reference) || ((qualifier_flags & kQualifier_Temporary) && (qualifiers & kQualifier_Reference));
 
 			if (!(can_allow_const && can_allow_ref))
 				return false;
@@ -618,6 +618,13 @@ namespace Meta
 	Spandle::~Spandle()
 	{
 		Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->free(list);
+	}
+
+	Spandle Spandle::reserve(const size_t size)
+	{
+		Spandle result;
+		result.allocate(size);
+		return result;
 	}
 
 	Handle& Spandle::operator[](const Memory::Index index)

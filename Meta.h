@@ -76,10 +76,13 @@ namespace Meta
 	static constexpr u8 kQualifier_Volatile  = 0b0100;
 	static constexpr u8 kQualifier_Reference = 0b1000;
 
-	template<typename T>
-	static constexpr auto QualifiersOf = Qualifier(std::is_rvalue_reference_v<T>
-		? kQualifier_Temporary
-		: (u8(std::is_const_v<std::remove_reference_t<T>>) << u8(1)) | (u8(std::is_volatile_v<std::remove_reference_t<T>>) << u8(2)) | (u8(std::is_lvalue_reference_v<T>) << u8(3)));
+	template<typename T> requires (!(std::is_pointer_v<T>))
+	static constexpr auto QualifiersOf = Qualifier(
+		  (u8(std::is_rvalue_reference_v<T> || std::is_same_v<T, std::remove_cvref_t<T>>) << u8(0))
+		| (u8(std::is_const_v<std::remove_reference_t<T>>) << u8(1))
+		| (u8(std::is_volatile_v<std::remove_reference_t<T>>) << u8(2))
+		| (u8(std::is_lvalue_reference_v<T>) << u8(3))
+		);
 
 	struct Information
 	{
@@ -143,20 +146,23 @@ namespace Meta
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		explicit View(const T* ptr)
-			: View(static_cast<void*>(const_cast<T*>(ptr)), Info<T>(), QualifiersOf<T>)
+			: View(static_cast<void*>(const_cast<T*>(ptr)), Info<T>(), QualifiersOf<const T&>)
 		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		explicit View(T* ptr)
-			: View(static_cast<void*>(ptr), Info<T>(), QualifiersOf<T>)
+			: View(static_cast<void*>(ptr), Info<T>(), QualifiersOf<T&>)
+		{}
+
+		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
+		explicit View(const T& ref)
+			: View(&ref)
 		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		explicit View(T& ref)
 			: View(&ref)
-		{
-			qualifiers = QualifiersOf<T> | kQualifier_Reference;
-		}
+		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
 		View(T&& value)
@@ -165,7 +171,7 @@ namespace Meta
 			if constexpr (kIsPrimitive<T>)
 				*this = value;
 			else
-				qualifiers = QualifiersOf<T>;
+				qualifiers = QualifiersOf<T&&>;
 		}
 
 		~View() = default;
@@ -177,7 +183,7 @@ namespace Meta
 		View& operator=(T&& value)
 		{
 			type = -Info<T>().index + kByValue_u8;
-			qualifiers = QualifiersOf<T>;
+			qualifiers = QualifiersOf<T&&>;
 			*static_cast<std::remove_cvref_t<T>*>(static_cast<void*>(&data[0])) = value;
 			return *this;
 		}
@@ -258,6 +264,13 @@ namespace Meta
 		friend class Handle;
 		friend class Spandle;
 	};
+
+	template<typename T>
+	View GetSingleton()
+	{
+		static T global;
+		return View(&global);
+	}
 }
 
 namespace Memory
@@ -409,6 +422,8 @@ namespace Meta
 		Spandle(const Spandle&) = default;
 		Spandle(Spandle&&) = default;
 		~Spandle();
+
+		static Spandle reserve(const size_t size);
 
 		Spandle& operator=(const Spandle&) = default;
 		Spandle& operator=(Spandle&&) = default;
