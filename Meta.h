@@ -27,31 +27,25 @@ SOFTWARE.
 
 #include <array>
 #include <cassert>
-#include <cstdint>
 #include <functional>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "Math.h"
 #include "Program.h"
-
-using u8  = uint8_t;
-using u16 = uint16_t;
-using u32 = uint32_t;
-using u64 = uint64_t;
-
-using i8  = int8_t;
-using i16 = int16_t;
-using i32 = int32_t;
-using i64 = int64_t;
-
-using f32 = float;
-using f64 = double;
 
 namespace Meta
 {
 	template<typename T>
 	extern Program::Name nameof();
+
+	template<typename T>
+	T& GetGlobal()
+	{
+		static T global;
+		return &global;
+	}
 
 	template<typename T>
 	static constexpr bool kIsPrimitive =
@@ -264,13 +258,6 @@ namespace Meta
 		friend class Handle;
 		friend class Spandle;
 	};
-
-	template<typename T>
-	View GetSingleton()
-	{
-		static T global;
-		return View(&global);
-	}
 }
 
 namespace Memory
