@@ -771,14 +771,16 @@ namespace Meta
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
-	// Math
+	// Logic
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using UnaryMathOperator = Handle (*)(const View);
-	using BinaryMathOperator = Handle (*)(const View, const View);
+	using UnaryOperator = Handle (*)(const View);
+	using BinaryOperator = Handle (*)(const View, const View);
+
+	// Math
 
 	template<typename T>
-	static UnaryMathOperator FromPositive()
+	static UnaryOperator FromPositive()
 	{
 		return [](const View view) -> Handle
 		{
@@ -787,13 +789,388 @@ namespace Meta
 	}
 
 	template<typename T>
-	static UnaryMathOperator FromNegative()
+	static UnaryOperator FromNegative()
 	{
 		return [](const View view) -> Handle
 		{
 			return Handle(-view.as<T>());
 		};
 	}
+
+	template<typename T>
+	static UnaryOperator FromPrefixIncrement()
+	{
+		return [](const View view) -> Handle
+		{
+			++view.as<T&>();
+			return Handle(view);
+		};
+	}
+
+	template<typename T>
+	static UnaryOperator FromPostfixIncrement()
+	{
+		return [](const View view) -> Handle
+		{
+			return Handle(view.as<T&>()++);
+		};
+	}
+
+	template<typename T>
+	static UnaryOperator FromPrefixDecrement()
+	{
+		return [](const View view) -> Handle
+		{
+			--view.as<T&>();
+			return Handle(view);
+		};
+	}
+
+	template<typename T>
+	static UnaryOperator FromPostfixDecrement()
+	{
+		return [](const View view) -> Handle
+		{
+			return Handle(view.as<T&>()--);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromAddEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() += b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromAdd()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() + b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromSubEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() -= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromSub()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() - b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromMulEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() *= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromMul()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() * b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromDivEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() /= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromDiv()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() / b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromModEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() %= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromMod()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() % b.as<T>());
+		};
+	}
+
+	// Bit Manipulation
+
+	template<typename T>
+	static UnaryOperator FromBitwiseNot()
+	{
+		return [](const View view) -> Handle
+		{
+			return Handle(~view.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseAndEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() &= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseAnd()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() & b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseOrEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() |= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseOr()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() | b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseXorEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() ^= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseXor()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() ^ b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseLeftShiftEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() <<= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseLeftShift()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() << b.as<T>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseRightShiftEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			a.as<T&>() >>= b.as<T>();
+			return Handle(a);
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromBitwiseRightShift()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<T>() >> b.as<T>());
+		};
+	}
+
+	// Logic
+
+	template<typename T>
+	static UnaryOperator FromLogicalNot()
+	{
+		return [](const View a) -> Handle
+		{
+			return Handle(!a.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromLogicalAnd()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() && b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromLogicalOr()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() || b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() == b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromNotEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() != b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromLessThan()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() < b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromLessThanOrEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() <= b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromGreaterThan()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() > b.as<const T&>());
+		};
+	}
+
+	template<typename T>
+	static BinaryOperator FromGreaterThanOrEquals()
+	{
+		return [](const View a, const View b) -> Handle
+		{
+			return Handle(a.as<const T&>() >= b.as<const T&>());
+		};
+	}
+
+	enum UnaryOperation : u8
+	{
+		kUnaryOperation_PrefixIncrement,
+		kUnaryOperation_PrefixDecrement,
+		kUnaryOperation_PostfixIncrement,
+		kUnaryOperation_PostfixDecrement,
+
+		kUnaryOperation_Positive,
+		kUnaryOperation_Negative,
+		kUnaryOperation_BitwiseNot,
+
+		kUnaryOperation_LogicalNot,
+
+		kUnaryOperation_Count
+	};
+
+	enum BinaryOperation : u8
+	{
+		kBinaryOperation_AddEquals,
+		kBinaryOperation_SubEquals,
+		kBinaryOperation_MulEquals,
+		kBinaryOperation_DivEquals,
+		kBinaryOperation_ModEquals,
+		kBinaryOperation_BitwiseAndEquals,
+		kBinaryOperation_BitwiseOrEquals,
+		kBinaryOperation_BitwiseXorEquals,
+		kBinaryOperation_BitwiseLeftShiftEquals,
+		kBinaryOperation_BitwiseRightShiftEquals,
+
+		kBinaryOperation_Add,
+		kBinaryOperation_Sub,
+		kBinaryOperation_Mul,
+		kBinaryOperation_Div,
+		kBinaryOperation_Mod,
+		kBinaryOperation_BitwiseAnd,
+		kBinaryOperation_BitwiseOr,
+		kBinaryOperation_BitwiseXor,
+		kBinaryOperation_BitwiseLeftShift,
+		kBinaryOperation_BitwiseRightShift,
+
+		kBinaryOperation_LogicalAnd,
+		kBinaryOperation_LogicalOr,
+
+		kBinaryOperation_Equals,
+		kBinaryOperation_NotEquals,
+		kBinaryOperation_LessThan,
+		kBinaryOperation_LessThanOrEquals,
+		kBinaryOperation_GreaterThan,
+		kBinaryOperation_GreaterThanOrEquals,
+
+		kBinaryOperation_Count
+	};
 
 	// -----------------------------------------------------------------------------------------------------------------
 	// Registration Helpers

@@ -38,8 +38,8 @@ namespace Program
 
 	namespace Log
 	{
-		inline std::wostream& Std(const Name tag = L"") { return std::wcout << (tag.empty() ? tag : L"[") << tag << (tag.empty() ? tag: L"] "); }
-		inline std::wostream& Err(const Name tag = L"") { return std::wcerr << (tag.empty() ? tag : L"[") << tag << (tag.empty() ? tag: L"] "); }
+		inline std::wostream& Std(const Name tag = L"") { return std::wcout << (tag.empty() ? tag : L"[") << tag << (tag.empty() ? tag : L"] "); }
+		inline std::wostream& Err(const Name tag = L"") { return std::wcerr << (tag.empty() ? tag : L"[") << tag << (tag.empty() ? tag : L"] "); }
 	}
 
 	void Assert(bool statement, const wchar_t* func, const wchar_t* file, const wchar_t* line, const wchar_t* message);
