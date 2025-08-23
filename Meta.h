@@ -37,7 +37,9 @@ SOFTWARE.
 
 namespace Meta
 {
+	// Intentionally not implemented by default to force user to define nameof() function for a type via NAMEOF_DEF
 	template<typename T>
+	// ReSharper disable once CppFunctionIsNotImplemented
 	extern Program::Name nameof();
 
 	template<typename T>
@@ -133,7 +135,7 @@ namespace Meta
 	public:
 		View() = default;
 
-		View(void* ptr, const Information& info, const Qualifier qualifier_flags);
+		View(void* ptr, const Information& info, const Qualifier qualifier_flags); // NOLINT(*-avoid-const-params-in-decls)
 
 		View(const View&) = default;
 		View(View&&) = default;
@@ -159,7 +161,7 @@ namespace Meta
 		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, View>)
-		View(T&& value)
+		View(T&& value) // NOLINT(*-explicit-constructor)
 			: View(&value)
 		{
 			if constexpr (kIsPrimitive<T>)
@@ -185,7 +187,7 @@ namespace Meta
 		explicit operator bool() const;
 		[[nodiscard]] bool valid() const;
 
-		[[nodiscard]] bool is(const Information& info, const Qualifier qualifier_flags) const;
+		[[nodiscard]] bool is(const Information& info, const Qualifier qualifier_flags) const; // NOLINT(*-avoid-const-params-in-decls)
 
 		template<typename T>
 		[[nodiscard]] bool is() const
@@ -319,7 +321,7 @@ namespace Meta
 		{}
 
 		template<typename T> requires (!std::is_same_v<std::remove_cvref_t<T>, Handle>)
-		Handle(T&& value)
+		Handle(T&& value) // NOLINT(*-explicit-constructor)
 			: Handle()
 		{
 			if constexpr (kIsPrimitive<T>)
@@ -350,7 +352,7 @@ namespace Meta
 		explicit operator bool() const;
 		[[nodiscard]] bool valid() const;
 
-		[[nodiscard]] bool is(const Information& info, const Qualifier qualifier_flags) const;
+		[[nodiscard]] bool is(const Information& info, const Qualifier qualifier_flags) const; // NOLINT(*-avoid-const-params-in-decls)
 
 		template<typename T>
 		[[nodiscard]] bool is() const
@@ -390,6 +392,7 @@ namespace Meta
 		template<typename... Args>
 		explicit Spandle(Args... args)
 		{
+			// ReSharper disable once CppDFAUnreadVariable
 			Memory::Index index = 0;
 
 			allocate(sizeof...(Args));
@@ -410,7 +413,7 @@ namespace Meta
 		Spandle(Spandle&&) = default;
 		~Spandle();
 
-		static Spandle reserve(const size_t size);
+		static Spandle reserve(const size_t size); // NOLINT(*-avoid-const-params-in-decls)
 
 		Spandle& operator=(const Spandle&) = default;
 		Spandle& operator=(Spandle&&) = default;
@@ -425,7 +428,7 @@ namespace Meta
 
 	private:
 		Memory::Range list;
-		void allocate(const size_t num_handles);
+		void allocate(const size_t num_handles); // NOLINT(*-avoid-const-params-in-decls)
 	};
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -687,7 +690,7 @@ namespace Meta
 		return FromCtorImpl<T, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 	}
 
-	extern bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature);
+	extern bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static bool AddConstructor()
@@ -695,7 +698,7 @@ namespace Meta
 		return AddConstructor(Info<T>(), FromCtor<T, Args...>(), FromParameterList<Args...>());
 	}
 
-	extern Constructor GetConstructor(const Index type, const FunctionSignature signature);
+	extern Constructor GetConstructor(const Index type, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static Constructor GetConstructor()
@@ -718,7 +721,7 @@ namespace Meta
 		};
 	}
 
-	extern bool AddDestructor(const Information& info, const Destructor destructor);
+	extern bool AddDestructor(const Information& info, const Destructor destructor); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static bool AddDestructor()
@@ -726,7 +729,7 @@ namespace Meta
 		return AddDestructor(Info<T>(), FromDtor<T>());
 	}
 
-	extern Destructor GetDestructor(const Index type);
+	extern Destructor GetDestructor(const Index type); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T>
 	static Destructor GetDestructor()
@@ -751,7 +754,7 @@ namespace Meta
 		};
 	}
 
-	extern bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature);
+	extern bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static bool AddAssigner()
@@ -759,7 +762,7 @@ namespace Meta
 		return AddAssigner(Info<T>(), FromAssignOp<T, U>(), FromParameterList<U>());
 	}
 
-	extern Assigner GetAssigner(const Index type, const FunctionSignature signature);
+	extern Assigner GetAssigner(const Index type, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args>
 	static Assigner GetAssigner()

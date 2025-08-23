@@ -24,7 +24,14 @@ SOFTWARE.
 
 #include "Math.h"
 
-namespace Math
-{
+#include "Meta.h"
 
-}
+META_AS(Math::Vector1<Math::DefaultFloat>, Vector1, Meta::AddPOD<Type>());
+META_AS(Math::Vector2<Math::DefaultFloat>, Vector2, Meta::AddPOD<Type>());
+META_AS(Math::Vector3<Math::DefaultFloat>, Vector3, Meta::AddPOD<Type>());
+META_AS(Math::Vector4<Math::DefaultFloat>, Vector4, Meta::AddPOD<Type>());
+
+META_AS(Math::Vector1I<Math::DefaultInt>, Vector1I, Meta::AddPOD<Type>());
+META_AS(Math::Vector2I<Math::DefaultInt>, Vector2I, Meta::AddPOD<Type>());
+META_AS(Math::Vector3I<Math::DefaultInt>, Vector3I, Meta::AddPOD<Type>());
+META_AS(Math::Vector4I<Math::DefaultInt>, Vector4I, Meta::AddPOD<Type>());

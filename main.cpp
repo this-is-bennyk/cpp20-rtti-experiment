@@ -6,8 +6,8 @@ class Foo { public: int x = 20; };
 
 class Bar : public Foo { public: int y = 0; };
 
-META(Foo, AddPOD<Type>());
-META(Bar, AddPOD<Type>(), Meta::AddInheritance<Type, Foo>());
+META(Foo, Meta::AddPOD<Type>());
+META(Bar, Meta::AddPOD<Type>(), Meta::AddInheritance<Type, Foo>());
 
 int main()
 {

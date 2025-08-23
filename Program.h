@@ -27,6 +27,9 @@ SOFTWARE.
 
 #include <iomanip>
 #include <iostream>
+
+// Included for convenience
+// ReSharper disable once CppUnusedIncludeDirective
 #include "ProgramConfig.h"
 
 namespace Program

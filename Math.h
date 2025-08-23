@@ -44,6 +44,9 @@ using f64 = double;
 
 namespace Math
 {
+	using DefaultInt = i64;
+	using DefaultFloat = f32;
+
 	template<typename T>
 	static constexpr bool kIsNumber = !std::is_same_v<T, bool> && std::is_arithmetic_v<T>;
 
@@ -63,7 +66,7 @@ namespace Math
 		constexpr Vector(Vector&&) = default;
 
 		template<typename U, size_t OtherDimension> requires (kIsNumber<U> && OtherDimension > size_t(0))
-		constexpr Vector(const Vector<U, OtherDimension>& other)
+		constexpr Vector(const Vector<U, OtherDimension>& other) // NOLINT(*-explicit-constructor)
 		{
 			for (size_t i = 0; i < (std::min)(Dimension, OtherDimension); i++)
 				vec[i] = T(other.vec[i]);
@@ -76,7 +79,7 @@ namespace Math
 		}
 
 		template<typename U, size_t OtherDimension> requires (kIsNumber<U> && OtherDimension > size_t(0))
-		constexpr Vector(const U (&other)[OtherDimension])
+		constexpr Vector(const U (&other)[OtherDimension]) // NOLINT(*-explicit-constructor)
 		{
 			for (size_t i = 0; i < (std::min)(Dimension, OtherDimension); i++)
 				vec[i] = T(other[i]);
@@ -89,7 +92,7 @@ namespace Math
 		}
 
 		template<typename U> requires (kIsNumber<U>)
-		constexpr Vector(U value)
+		constexpr Vector(U value) // NOLINT(*-explicit-constructor)
 		{
 			for (size_t i = 0; i < Dimension; ++i)
 				vec[i] = T(value);
@@ -138,8 +141,11 @@ namespace Math
 
 		constexpr Vector& operator/=(const Vector& other) { return *this *= (T(1) / other); }
 
-		static constexpr Vector Zero = Vector();
-		static constexpr Vector One =  Vector(T(1));
+		constexpr       T& operator[](size_t index)       { return vec[index]; }
+		constexpr const T& operator[](size_t index) const { return vec[index]; }
+
+		static constexpr Vector Zero() { return Vector(); }
+		static constexpr Vector One()  { return Vector(T(1)); }
 	};
 }
 
@@ -185,17 +191,17 @@ namespace Math
 		constexpr IntegralVector(IntegralVector&&) = default;
 
 		template<typename U, size_t OtherDimension> requires (kIsNumber<U> && OtherDimension > size_t(0))
-		constexpr IntegralVector(const Vector<U, OtherDimension>& other)
+		constexpr IntegralVector(const Vector<U, OtherDimension>& other) // NOLINT(*-explicit-constructor)
 			: Vector<T, Dimension>(other)
 		{}
 
 		template<typename U, size_t OtherDimension> requires (kIsNumber<U> && OtherDimension > size_t(0))
-		constexpr IntegralVector(const U (&other)[OtherDimension])
+		constexpr IntegralVector(const U (&other)[OtherDimension]) // NOLINT(*-explicit-constructor)
 			: Vector<T, Dimension>(other)
 		{}
 
 		template<typename U> requires (kIsNumber<U>)
-		constexpr IntegralVector(U other)
+		constexpr IntegralVector(U other) // NOLINT(*-explicit-constructor)
 			: Vector<T, Dimension>(other)
 		{}
 
@@ -204,7 +210,7 @@ namespace Math
 		constexpr IntegralVector& operator=(const IntegralVector&) = default;
 		constexpr IntegralVector& operator=(IntegralVector&&) = default;
 
-		constexpr operator Vector<T, Dimension>() const { return Vector<T, Dimension>(this->vec); }
+		constexpr operator Vector<T, Dimension>() const { return Vector<T, Dimension>(this->vec); } // NOLINT(*-explicit-constructor)
 
 		constexpr IntegralVector& operator%=(const IntegralVector& other)
 		{
@@ -340,7 +346,74 @@ namespace Math
 	template<typename T, size_t Dimension>
 	constexpr bool BehindAbsolute(const Vector<T, Dimension>& a, const Vector<T, Dimension>& b)
 	{
-		return Dot(a, Vector<T, Dimension>::One) < Dot(a, Vector<T, Dimension>::One);
+		return Dot(a, Vector<T, Dimension>::One()) < Dot(a, Vector<T, Dimension>::One());
+	}
+
+	template<typename T, size_t Dimension>
+	constexpr bool Any(const Vector<T, Dimension>& v)
+	{
+		for (size_t i = 0; i < Dimension; ++i)
+		{
+			if (bool(v[i]))
+				return true;
+		}
+		return false;
+	}
+
+	template<typename T, size_t Dimension>
+	constexpr bool All(const Vector<T, Dimension>& v)
+	{
+		for (size_t i = 0; i < Dimension; ++i)
+		{
+			if (!bool(v[i]))
+				return false;
+		}
+		return true;
+	}
+
+	namespace Axes
+	{
+		template<typename T, size_t Dimension>
+		using Function = T& (*)(Vector<T, Dimension>&);
+
+		template<typename T, size_t Dimension>
+		constexpr T& X(Vector<T, Dimension>& v) { return v[0]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(1))
+		constexpr T& Y(Vector<T, Dimension>& v) { return v[1]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(2))
+		constexpr T& Z(Vector<T, Dimension>& v) { return v[2]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(3))
+		constexpr T& W(Vector<T, Dimension>& v) { return v[3]; }
+
+		template<typename T, size_t Dimension>
+		constexpr T& R(Vector<T, Dimension>& v) { return v[0]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(1))
+		constexpr T& G(Vector<T, Dimension>& v) { return v[1]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(2))
+		constexpr T& B(Vector<T, Dimension>& v) { return v[2]; }
+
+		template<typename T, size_t Dimension> requires (Dimension > size_t(3))
+		constexpr T& A(Vector<T, Dimension>& v) { return v[3]; }
+	}
+
+	template<typename T, size_t Dimension, Axes::Function<T, Dimension>... AxisFunctions>
+	constexpr Vector<T, Dimension>& Swizzle(Vector<T, Dimension>& v)
+	{
+		static_assert(sizeof...(AxisFunctions) <= Dimension, "Too many axis functions!");
+
+		Vector<T, Dimension> result = v;
+		// ReSharper disable once CppDFAUnreadVariable
+		size_t index = 0;
+
+		([&]() { result[index++] = AxisFunctions(v); }(), ...);
+
+		v = result;
+		return v;
 	}
 }
 

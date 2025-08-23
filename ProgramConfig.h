@@ -61,6 +61,15 @@ SOFTWARE.
 #define MK_IS_PLATFORM_NT CMAKE_BUILD_TYPE == nt
 #define MK_IS_PLATFORM_EMSCRIPTEN CMAKE_BUILD_TYPE == em
 
+#if MK_IS_PLATFORM_WINDOWS
+#define MK_PLATFORM_NAME Windows
+#else
+#define MK_PLATFORM_NAME Unknown
+#endif
+
+#define MK_PLATFORM_NAME_CSTR CSTR_MACRO(MK_PLATFORM_NAME)
+#define MK_PLATFORM_NAME_WSTR WSTR_MACRO(MK_PLATFORM_NAME)
+
 #define MK_TRIM_DEBUG_INFO 0
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -134,24 +143,11 @@ namespace Program
 		#endif
 		;
 
-	static constexpr const char*    kProgramNameCString = MK_PROGRAM_NAME_CSTR;
-	static constexpr const wchar_t* kProgramNameWString = MK_PROGRAM_NAME_WSTR;
+	static constexpr auto kNameCStr = MK_PROGRAM_NAME_CSTR;
+	static constexpr auto kNameWStr = MK_PROGRAM_NAME_WSTR;
 
-	static constexpr const char* kPlatformNameCString =
-		#if MK_IS_PLATFORM_WINDOWS
-		"Windows"
-		#else
-		"Unknown Platform"
-		#endif
-		;
-
-	static constexpr const wchar_t* kPlatformNameWString =
-		#if MK_IS_PLATFORM_WINDOWS
-		L"Windows"
-		#else
-		L"Unknown Platform"
-		#endif
-		;
+	static constexpr auto kPlatformCStr = MK_PLATFORM_NAME_CSTR;
+	static constexpr auto kPlatformWStr = MK_PLATFORM_NAME_WSTR;
 
 	static constexpr bool kTrimDebugInfo = MK_TRIM_DEBUG_INFO;
 }

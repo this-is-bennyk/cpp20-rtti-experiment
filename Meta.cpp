@@ -25,12 +25,24 @@ SOFTWARE.
 #include "Meta.h"
 
 #include <algorithm>
+#include <bit>
+#include <cstdlib>
 #include <deque>
 #include <iterator>
 #include <limits>
 #include <queue>
 #include <unordered_map>
 #include "MetaConfig.h"
+
+namespace
+{
+	template <typename T>
+	T* NullCheck(T* ptr)
+	{
+		Program::Assert(ptr, MK_ASSERT_STATS_CSTR, "Pointer must not be null!");
+		return ptr;
+	}
+}
 
 namespace Meta
 {
@@ -44,28 +56,31 @@ namespace Meta
 		return result;
 	}
 
-	static auto infos = PreallocateContainer<std::vector<Information>>();
-	static auto name_to_index = PreallocateContainer<std::unordered_map<Program::Name, Index>>();
+	static std::vector<Information>* infos_ptr = nullptr;
+	static std::unordered_map<Program::Name, Index>* name_to_index_ptr = nullptr;
 
-	static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
-	static auto destructors = PreallocateContainer<std::vector<Destructor>>();
-	static auto assigners = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Assigner>>>();
+	static std::vector<std::unordered_map<FunctionSignature, Constructor>>* constructors_ptr = nullptr;
+	static std::vector<Destructor>* destructors_ptr = nullptr;
+	static std::vector<std::unordered_map<FunctionSignature, Assigner>>* assigners_ptr = nullptr;
 }
 
-META(u8,   AddPOD<Type>());
-META(u16,  AddPOD<Type>());
-META(u32,  AddPOD<Type>());
-META(u64,  AddPOD<Type>());
-META(i8,   AddPOD<Type>());
-META(i16,  AddPOD<Type>());
-META(i32,  AddPOD<Type>());
-META(i64,  AddPOD<Type>());
-META(f32,  AddPOD<Type>());
-META(f64,  AddPOD<Type>());
-META(bool, AddPOD<Type>());
+NAMEOF_DEF(u8);
+NAMEOF_DEF(u16);
+NAMEOF_DEF(u32);
+NAMEOF_DEF(u64);
+NAMEOF_DEF(i8);
+NAMEOF_DEF(i16);
+NAMEOF_DEF(i32);
+NAMEOF_DEF(i64);
+NAMEOF_DEF(f32);
+NAMEOF_DEF(f64);
+NAMEOF_DEF(bool);
 
-META_AS(Meta::View,   View,   AddPOD<Type>());
-META_AS(Meta::Handle, Handle, AddPOD<Type>());
+using View = Meta::View;
+using Handle = Meta::Handle;
+
+NAMEOF_DEF(View);
+NAMEOF_DEF(Handle);
 
 namespace Memory
 {
@@ -101,6 +116,8 @@ namespace Memory
 		explicit Pool(const Meta::Index type_index = Meta::kInvalidType)
 			: type(type_index)
 		{}
+
+		~Pool() = default;
 
 		Index alloc(const Meta::Spandle& arguments)
 		{
@@ -215,17 +232,36 @@ namespace Memory
 			: type(type_index)
 		{}
 
-		Range alloc(const size_t size)
+		~Heap()
 		{
+			std::free(data);
+		}
+
+		Range alloc(const size_t size, const Meta::Spandle& arguments)
+		{
+			const Meta::Information* info = Meta::Get(type);
 			Range result(kInvalidIndex, kInvalidIndex);
 
 			if (queue.size() < kMaxSize)
 			{
 				if (queue.empty() || queue.top().size() < size)
 				{
-					const Meta::Information* info = Meta::Get(type);
+					if (capacity < num_allocated + size)
+					{
+						const size_t new_capacity = std::bit_ceil(num_allocated + size);
+						void* allocation = std::realloc(data, new_capacity * info->size);
 
-					data.resize((num_allocated + size) * info->size, u8(0));
+						Program::Assert(allocation, MK_ASSERT_STATS_CSTR, "Ran out of memory!");
+
+						if (allocation != data)
+						{
+							std::free(data);
+							data = allocation;
+						}
+
+						capacity = new_capacity;
+					}
+
 					used.resize(num_allocated + size, true);
 
 					result.start = Index(num_allocated);
@@ -245,10 +281,12 @@ namespace Memory
 			{
 				num_allocated += size;
 
-				// Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
-				// const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
-				// const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
-				// constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
+				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
+				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
+				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
+
+				for (Index index = result.start; index < result.end; ++index)
+					constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
 			}
 
 			return result;
@@ -259,6 +297,11 @@ namespace Memory
 			if (range.empty())
 				return;
 
+			const Meta::Information* info = Meta::Get(type);
+
+			for (Index index = range.start; index < range.end; ++index)
+				Meta::GetDestructor(info->index)(View(get(index), *info, Meta::kQualifier_Reference));
+
 			std::fill(std::next(used.begin(), range.start), std::next(used.begin(), range.end), false);
 			queue.push(range);
 
@@ -267,11 +310,13 @@ namespace Memory
 
 		void* get(const Index index)
 		{
-			return used[index] ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
+			return used[index] ? static_cast<u8*>(data) + (size_t(index) * Meta::Get(type)->size) : nullptr;
 		}
 
 	private:
-		std::vector<u8> data;
+		void* data = nullptr;
+		size_t capacity = 0;
+
 		std::vector<bool> used;
 		std::priority_queue<Range, std::deque<Range>, RangeComparator> queue;
 
@@ -285,6 +330,41 @@ namespace Meta
 {
 	const Information& Register(const Program::Name name, const size_t size)
 	{
+		static auto infos = PreallocateContainer<std::vector<Information>>();
+		static auto name_to_index = PreallocateContainer<std::unordered_map<Program::Name, Index>>();
+
+		static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
+		static auto destructors = PreallocateContainer<std::vector<Destructor>>();
+		static auto assigners = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Assigner>>>();
+
+		static bool initialized = false;
+
+		if (!initialized)
+		{
+			initialized = true;
+
+			infos_ptr = &infos;
+			name_to_index_ptr = &name_to_index;
+
+			constructors_ptr = &constructors;
+			destructors_ptr = &destructors;
+			assigners_ptr = &assigners;
+
+			Program::Assert(AddPOD<u8>(),     MK_ASSERT_STATS_CSTR, "Error in initializing u8 into the Meta system!");
+			Program::Assert(AddPOD<u16>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u16 into the Meta system!");
+			Program::Assert(AddPOD<u32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u32 into the Meta system!");
+			Program::Assert(AddPOD<u64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u64 into the Meta system!");
+			Program::Assert(AddPOD<i8>(),     MK_ASSERT_STATS_CSTR, "Error in initializing i8 into the Meta system!");
+			Program::Assert(AddPOD<i16>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i16 into the Meta system!");
+			Program::Assert(AddPOD<i32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i32 into the Meta system!");
+			Program::Assert(AddPOD<i64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i64 into the Meta system!");
+			Program::Assert(AddPOD<f32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f32 into the Meta system!");
+			Program::Assert(AddPOD<f64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f64 into the Meta system!");
+			Program::Assert(AddPOD<bool>(),   MK_ASSERT_STATS_CSTR, "Error in initializing bool into the Meta system!");
+			Program::Assert(AddPOD<View>(),   MK_ASSERT_STATS_CSTR, "Error in initializing View into the Meta system!");
+			Program::Assert(AddPOD<Handle>(), MK_ASSERT_STATS_CSTR, "Error in initializing Handle into the Meta system!");
+		}
+
 		Index index = kInvalidType;
 
 		if (name_to_index.empty() || !name_to_index.contains(name))
@@ -313,9 +393,9 @@ namespace Meta
 
 	Index Find(const Program::Name name)
 	{
-		const auto iterator = name_to_index.find(name);
+		const auto iterator = NullCheck(name_to_index_ptr)->find(name);
 
-		if (iterator == name_to_index.end())
+		if (iterator == NullCheck(name_to_index_ptr)->end())
 			return kInvalidType;
 
 		return iterator->second;
@@ -324,7 +404,7 @@ namespace Meta
 	const Information* Get(const Index type)
 	{
 		Program::Assert(type > kInvalidType && type <= type_counter, MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		return &infos[type];
+		return &(*NullCheck(infos_ptr))[type];
 	}
 
 	bool Valid(const Index type_index)
@@ -335,7 +415,7 @@ namespace Meta
 	void Spandle::allocate(const size_t num_handles)
 	{
 		if (num_handles > 0)
-			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles);
+			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles, Spandle());
 	}
 
 	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited)
@@ -377,12 +457,14 @@ namespace Meta
 
 	bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature)
 	{
-		auto [iterator, success] = constructors[info.index].try_emplace(signature, constructor);
+		auto [iterator, success] = (*NullCheck(constructors_ptr))[info.index].try_emplace(signature, constructor);
 		return success;
 	}
 
 	Constructor GetConstructor(const Index type, const FunctionSignature signature)
 	{
+		auto& constructors = *NullCheck(constructors_ptr);
+
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(constructors[type].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
 		return constructors[type][signature];
@@ -390,12 +472,14 @@ namespace Meta
 
 	bool AddDestructor(const Information& info, const Destructor destructor)
 	{
-		destructors[info.index] = destructor;
+		(*NullCheck(destructors_ptr))[info.index] = destructor;
 		return true;
 	}
 
 	Destructor GetDestructor(const Index type)
 	{
+		const auto& destructors = *NullCheck(destructors_ptr);
+
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(destructors[type], MK_ASSERT_STATS_CSTR, "No destructor specified!");
 		return destructors[type];
@@ -403,18 +487,22 @@ namespace Meta
 
 	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature)
 	{
-		auto [iterator, success] = assigners[info.index].try_emplace(signature, assigner);
+		auto [iterator, success] = (*NullCheck(assigners_ptr))[info.index].try_emplace(signature, assigner);
 		return success;
 	}
 
 	Assigner GetAssigner(const Index type, const FunctionSignature signature)
 	{
+		auto& assigners = *NullCheck(assigners_ptr);
+
+		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
+		Program::Assert(assigners[type].contains(signature), MK_ASSERT_STATS_CSTR, "No assigner with the specified signature!");
 		return assigners[type][signature];
 	}
 
 	void DumpInfo()
 	{
-		static constexpr auto kLabel = L"[Meta] ";
+		static constexpr auto kLabel = L"Meta";
 
 		Program::Log::Std(kLabel) << L"-------------------- Meta --------------------" << std::endl;
 		Program::Log::Std(kLabel) << L"~~~~~ Type List ~~~~" << std::endl;
@@ -428,7 +516,7 @@ namespace Meta
 			++digits;
 		}
 
-		for (const Information& info : infos)
+		for (const auto& infos = *NullCheck(infos_ptr); const Information& info : infos)
 		{
 			Program::Log::Std(kLabel)
 				<< L"Type ID: " << std::setfill(L'0') << std::setw(int(digits)) << info.index

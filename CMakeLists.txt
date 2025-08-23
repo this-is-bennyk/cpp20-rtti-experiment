@@ -9,4 +9,5 @@ add_executable(VariantV4 main.cpp Meta.cpp
         Program.h
         ProgramConfig.h
         Math.cpp
-        Math.h)
+        Math.h
+)

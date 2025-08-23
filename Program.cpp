@@ -28,8 +28,8 @@ SOFTWARE.
 #include <cwchar>
 
 #if MK_IS_PLATFORM_WINDOWS
-#include <intrin.h>
 #define WIN32_LEAN_AND_MEAN
+#include <intrin.h>
 #include <Windows.h>
 #else
 #endif
@@ -45,11 +45,15 @@ namespace Program
 	[[noreturn]]
 	void Panic()
 	{
-		Log::Err(L"Panic") << ErrorBuffer << std::endl;
+		// ReSharper disable once CppDFAUnreachableCode
+		if constexpr (kIsDebug || !kTrimDebugInfo)
+		{
+			Log::Err(L"Panic") << ErrorBuffer << std::endl;
 
-		#if MK_IS_PLATFORM_WINDOWS
-		MessageBoxW(nullptr, ErrorBuffer, MK_PROGRAM_NAME_WSTR L": Error", MB_ICONERROR | MB_OK | MB_DEFBUTTON1);
-		#endif
+			#if MK_IS_PLATFORM_WINDOWS
+			MessageBoxW(nullptr, ErrorBuffer, MK_PROGRAM_NAME_WSTR L": Error", MB_ICONERROR | MB_OK | MB_DEFBUTTON1);
+			#endif
+		}
 
 		if constexpr (kIsDebug)
 		{
@@ -63,25 +67,27 @@ namespace Program
 
 	void Assert(const bool statement, const wchar_t* func, const wchar_t* file, const wchar_t* line, const wchar_t* message)
 	{
+		// ReSharper disable once CppDFAUnreachableCode
 		if constexpr (kIsDebug || !kTrimDebugInfo)
 		{
 			if (!statement)
-			{
 				swprintf_s(ErrorBuffer, L"In %s, at line %s of %s: %s", func, line, file, message);
-				Panic();
-			}
 		}
+
+		if (!statement)
+			Panic();
 	}
 
 	void Assert(const bool statement, const char* func, const char* file, const char* line, const char* message)
 	{
+		// ReSharper disable once CppDFAUnreachableCode
 		if constexpr (kIsDebug || !kTrimDebugInfo)
 		{
 			if (!statement)
-			{
 				swprintf_s(ErrorBuffer, L"In %S, at line %S of %S: %S", func, line, file, message);
-				Panic();
-			}
 		}
+
+		if (!statement)
+			Panic();
 	}
 }
