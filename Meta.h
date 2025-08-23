@@ -835,98 +835,98 @@ namespace Meta
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromAddEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() += b.as<T>();
+			a.as<T&>() += T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromAdd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() + b.as<T>());
+			return Handle(a.as<T>() + T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromSubEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() -= b.as<T>();
+			a.as<T&>() -= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromSub()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() - b.as<T>());
+			return Handle(a.as<T>() - T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromMulEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() *= b.as<T>();
+			a.as<T&>() *= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromMul()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() * b.as<T>());
+			return Handle(a.as<T>() * T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromDivEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() /= b.as<T>();
+			a.as<T&>() /= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromDiv()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() / b.as<T>());
+			return Handle(a.as<T>() / T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromModEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() %= b.as<T>();
+			a.as<T&>() %= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromMod()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() % b.as<T>());
+			return Handle(a.as<T>() % T(b.as<U>()));
 		};
 	}
 
@@ -941,98 +941,98 @@ namespace Meta
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseAndEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() &= b.as<T>();
+			a.as<T&>() &= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseAnd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() & b.as<T>());
+			return Handle(a.as<T>() & T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseOrEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() |= b.as<T>();
+			a.as<T&>() |= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseOr()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() | b.as<T>());
+			return Handle(a.as<T>() | T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseXorEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() ^= b.as<T>();
+			a.as<T&>() ^= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseXor()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() ^ b.as<T>());
+			return Handle(a.as<T>() ^ T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseLeftShiftEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() <<= b.as<T>();
+			a.as<T&>() <<= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseLeftShift()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() << b.as<T>());
+			return Handle(a.as<T>() << T(b.as<U>()));
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseRightShiftEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			a.as<T&>() >>= b.as<T>();
+			a.as<T&>() >>= T(b.as<U>());
 			return Handle(a);
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromBitwiseRightShift()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<T>() >> b.as<T>());
+			return Handle(a.as<T>() >> T(b.as<U>()));
 		};
 	}
 
@@ -1047,21 +1047,21 @@ namespace Meta
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromLogicalAnd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<const T&>() && b.as<const T&>());
+			return Handle(a.as<const T&>() && b.as<const U&>());
 		};
 	}
 
-	template<typename T>
+	template<typename T, typename U>
 	static BinaryOperator FromLogicalOr()
 	{
 		return [](const View a, const View b) -> Handle
 		{
-			return Handle(a.as<const T&>() || b.as<const T&>());
+			return Handle(a.as<const T&>() || b.as<const U&>());
 		};
 	}
 
@@ -1200,7 +1200,7 @@ namespace Meta \
 	} \
 }
 
-#define META(type, ...) \
+#define META_TYPE(type, ...) \
 NAMEOF_DEF(type) \
 namespace Meta \
 { \
@@ -1214,6 +1214,6 @@ namespace Meta \
 		}(); \
 }
 
-#define META_AS(type, alt_name, ...) using alt_name = type; META(alt_name, __VA_ARGS__)
+#define META_TYPE_AS(type, alt_name, ...) using alt_name = type; META_TYPE(alt_name, __VA_ARGS__)
 
 #endif
