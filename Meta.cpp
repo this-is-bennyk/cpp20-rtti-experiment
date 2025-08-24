@@ -30,6 +30,7 @@ SOFTWARE.
 #include <deque>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <queue>
 #include <unordered_map>
 #include "MetaConfig.h"
@@ -37,7 +38,7 @@ SOFTWARE.
 namespace
 {
 	template <typename T>
-	T* NullCheck(T* ptr)
+	T* Require(T* ptr)
 	{
 		Program::Assert(ptr, MK_ASSERT_STATS_CSTR, "Pointer must not be null!");
 		return ptr;
@@ -56,12 +57,32 @@ namespace Meta
 		return result;
 	}
 
-	static std::vector<Information>* infos_ptr = nullptr;
-	static std::unordered_map<Program::Name, Index>* name_to_index_ptr = nullptr;
+	using  InfosContainer = std::vector<Information>;
+	static InfosContainer* infos_ptr = nullptr;
 
-	static std::vector<std::unordered_map<FunctionSignature, Constructor>>* constructors_ptr = nullptr;
-	static std::vector<Destructor>* destructors_ptr = nullptr;
-	static std::vector<std::unordered_map<FunctionSignature, Assigner>>* assigners_ptr = nullptr;
+	using  NameToIndexContainer = std::unordered_map<Program::Name, Index>;
+	static NameToIndexContainer* name_to_index_ptr = nullptr;
+
+	using  ConstructorsContainer = std::vector<std::unordered_map<FunctionSignature, Constructor>>;
+	static ConstructorsContainer* constructors_ptr = nullptr;
+
+	using  DestructorsContainer = std::vector<Destructor>;
+	static DestructorsContainer* destructors_ptr = nullptr;
+
+	using  AssignersContainer = std::vector<std::unordered_map<FunctionSignature, Assigner>>;
+	static AssignersContainer* assigners_ptr = nullptr;
+
+	using  UnaryOpsContainer = std::vector<std::vector<std::unordered_map<FunctionSignature, UnaryOperator>>>;
+	static UnaryOpsContainer* unary_ops_ptr = nullptr;
+
+	using  BinaryOpsContainer = std::vector<std::vector<std::unordered_map<FunctionSignature, BinaryOperator>>>;
+	static BinaryOpsContainer* binary_ops_ptr = nullptr;
+
+	using ConvertersContainer = std::vector<std::vector<Converter>>;
+	static ConvertersContainer* converters_ptr = nullptr;
+
+	using  CastersContainer = std::vector<std::vector<Caster>>;
+	static CastersContainer* casters_ptr = nullptr;
 }
 
 NAMEOF_DEF(u8);
@@ -328,14 +349,18 @@ namespace Memory
 
 namespace Meta
 {
-	const Information& Register(const Program::Name name, const size_t size)
+	std::pair<std::vector<Information>*, Index> Register(const Program::Name name, const size_t size)
 	{
-		static auto infos = PreallocateContainer<std::vector<Information>>();
-		static auto name_to_index = PreallocateContainer<std::unordered_map<Program::Name, Index>>();
+		static auto infos         = PreallocateContainer<std::remove_pointer_t<decltype(infos_ptr)>>();
+		static auto name_to_index = PreallocateContainer<std::remove_pointer_t<decltype(name_to_index_ptr)>>();
+		static auto converters    = PreallocateContainer<std::remove_pointer_t<decltype(converters_ptr)>>();
+		static auto casters       = PreallocateContainer<std::remove_pointer_t<decltype(casters_ptr)>>();
 
-		static auto constructors = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Constructor>>>();
-		static auto destructors = PreallocateContainer<std::vector<Destructor>>();
-		static auto assigners = PreallocateContainer<std::vector<std::unordered_map<FunctionSignature, Assigner>>>();
+		static auto constructors = PreallocateContainer<std::remove_pointer_t<decltype(constructors_ptr)>>();
+		static auto destructors  = PreallocateContainer<std::remove_pointer_t<decltype(destructors_ptr)>>();
+		static auto assigners    = PreallocateContainer<std::remove_pointer_t<decltype(assigners_ptr)>>();
+		static auto unary_ops    = PreallocateContainer<std::remove_pointer_t<decltype(unary_ops_ptr)>>();
+		static auto binary_ops   = PreallocateContainer<std::remove_pointer_t<decltype(binary_ops_ptr)>>();
 
 		static bool initialized = false;
 
@@ -345,21 +370,25 @@ namespace Meta
 
 			infos_ptr = &infos;
 			name_to_index_ptr = &name_to_index;
+			converters_ptr = &converters;
+			casters_ptr = &casters;
 
 			constructors_ptr = &constructors;
 			destructors_ptr = &destructors;
 			assigners_ptr = &assigners;
+			unary_ops_ptr = &unary_ops;
+			binary_ops_ptr = &binary_ops;
 
-			Program::Assert(AddPOD<u8>(),     MK_ASSERT_STATS_CSTR, "Error in initializing u8 into the Meta system!");
-			Program::Assert(AddPOD<u16>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u16 into the Meta system!");
-			Program::Assert(AddPOD<u32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u32 into the Meta system!");
-			Program::Assert(AddPOD<u64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing u64 into the Meta system!");
-			Program::Assert(AddPOD<i8>(),     MK_ASSERT_STATS_CSTR, "Error in initializing i8 into the Meta system!");
-			Program::Assert(AddPOD<i16>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i16 into the Meta system!");
-			Program::Assert(AddPOD<i32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i32 into the Meta system!");
-			Program::Assert(AddPOD<i64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing i64 into the Meta system!");
-			Program::Assert(AddPOD<f32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f32 into the Meta system!");
-			Program::Assert(AddPOD<f64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f64 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<u8>(),  MK_ASSERT_STATS_CSTR, "Error in initializing u8 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<u16>(), MK_ASSERT_STATS_CSTR, "Error in initializing u16 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<u32>(), MK_ASSERT_STATS_CSTR, "Error in initializing u32 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<u64>(), MK_ASSERT_STATS_CSTR, "Error in initializing u64 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<i8>(),  MK_ASSERT_STATS_CSTR, "Error in initializing i8 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<i16>(), MK_ASSERT_STATS_CSTR, "Error in initializing i16 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<i32>(), MK_ASSERT_STATS_CSTR, "Error in initializing i32 into the Meta system!");
+			Program::Assert(AddPrimitiveIntegralType<i64>(), MK_ASSERT_STATS_CSTR, "Error in initializing i64 into the Meta system!");
+			Program::Assert(AddPrimitiveFloatType<f32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f32 into the Meta system!");
+			Program::Assert(AddPrimitiveFloatType<f64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f64 into the Meta system!");
 			Program::Assert(AddPOD<bool>(),   MK_ASSERT_STATS_CSTR, "Error in initializing bool into the Meta system!");
 			Program::Assert(AddPOD<View>(),   MK_ASSERT_STATS_CSTR, "Error in initializing View into the Meta system!");
 			Program::Assert(AddPOD<Handle>(), MK_ASSERT_STATS_CSTR, "Error in initializing Handle into the Meta system!");
@@ -384,18 +413,20 @@ namespace Meta
 			constructors.emplace_back();
 			destructors.push_back(nullptr);
 			assigners.emplace_back();
+			unary_ops.emplace_back();
+			binary_ops.emplace_back();
 		}
 		else
 			index = name_to_index.find(name)->second;
 
-		return infos[index];
+		return { &infos, index };
 	}
 
 	Index Find(const Program::Name name)
 	{
-		const auto iterator = NullCheck(name_to_index_ptr)->find(name);
+		const auto iterator = Require(name_to_index_ptr)->find(name);
 
-		if (iterator == NullCheck(name_to_index_ptr)->end())
+		if (iterator == Require(name_to_index_ptr)->end())
 			return kInvalidType;
 
 		return iterator->second;
@@ -404,7 +435,7 @@ namespace Meta
 	const Information* Get(const Index type)
 	{
 		Program::Assert(type > kInvalidType && type <= type_counter, MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		return &(*NullCheck(infos_ptr))[type];
+		return &(*Require(infos_ptr))[type];
 	}
 
 	bool Valid(const Index type_index)
@@ -412,10 +443,48 @@ namespace Meta
 		return type_index > kInvalidType && type_index <= type_counter;
 	}
 
-	void Spandle::allocate(const size_t num_handles)
+	bool AddConverters(const Information& info_a, Information& info_b, const Converter converter_ab, const Converter converter_ba)
 	{
-		if (num_handles > 0)
-			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles, Spandle());
+		auto& converters = *Require(converters_ptr);
+
+		if (converters.size() < info_a.index + 1)
+			converters.resize(info_a.index + 1);
+
+		if (converters.size() < info_b.index + 1)
+			converters.resize(info_b.index + 1);
+
+		if (converters[info_a.index].size() < info_b.index + 1)
+			converters[info_a.index].resize(info_b.index + 1);
+
+		if (converters[info_b.index].size() < info_a.index + 1)
+			converters[info_b.index].resize(info_a.index + 1);
+
+		converters[info_a.index][info_b.index] = converter_ab;
+		converters[info_b.index][info_a.index] = converter_ba;
+
+		return true;
+	}
+
+	bool AddCasters(const Information& info_a, const Information& info_b, const Caster caster_ab, const Caster caster_ba)
+	{
+		auto& casters = *Require(casters_ptr);
+
+		if (casters.size() < info_a.index + 1)
+			casters.resize(info_a.index + 1);
+
+		if (casters.size() < info_b.index + 1)
+			casters.resize(info_b.index + 1);
+
+		if (casters[info_a.index].size() < info_b.index + 1)
+			casters[info_a.index].resize(info_b.index + 1);
+
+		if (casters[info_b.index].size() < info_a.index + 1)
+			casters[info_b.index].resize(info_a.index + 1);
+
+		casters[info_a.index][info_b.index] = caster_ab;
+		casters[info_b.index][info_a.index] = caster_ba;
+
+		return true;
 	}
 
 	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited)
@@ -457,13 +526,13 @@ namespace Meta
 
 	bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature)
 	{
-		auto [iterator, success] = (*NullCheck(constructors_ptr))[info.index].try_emplace(signature, constructor);
+		auto [iterator, success] = (*Require(constructors_ptr))[info.index].try_emplace(signature, constructor);
 		return success;
 	}
 
 	Constructor GetConstructor(const Index type, const FunctionSignature signature)
 	{
-		auto& constructors = *NullCheck(constructors_ptr);
+		auto& constructors = *Require(constructors_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(constructors[type].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
@@ -472,13 +541,13 @@ namespace Meta
 
 	bool AddDestructor(const Information& info, const Destructor destructor)
 	{
-		(*NullCheck(destructors_ptr))[info.index] = destructor;
+		(*Require(destructors_ptr))[info.index] = destructor;
 		return true;
 	}
 
 	Destructor GetDestructor(const Index type)
 	{
-		const auto& destructors = *NullCheck(destructors_ptr);
+		const auto& destructors = *Require(destructors_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(destructors[type], MK_ASSERT_STATS_CSTR, "No destructor specified!");
@@ -487,17 +556,39 @@ namespace Meta
 
 	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature)
 	{
-		auto [iterator, success] = (*NullCheck(assigners_ptr))[info.index].try_emplace(signature, assigner);
+		auto [iterator, success] = (*Require(assigners_ptr))[info.index].try_emplace(signature, assigner);
 		return success;
 	}
 
 	Assigner GetAssigner(const Index type, const FunctionSignature signature)
 	{
-		auto& assigners = *NullCheck(assigners_ptr);
+		auto& assigners = *Require(assigners_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(assigners[type].contains(signature), MK_ASSERT_STATS_CSTR, "No assigner with the specified signature!");
 		return assigners[type][signature];
+	}
+
+	bool AddUnaryOp(const Information& info, const UnaryOperator unary_operator, const UnaryOperation type, const FunctionSignature signature)
+	{
+		auto& unary_ops = *Require(unary_ops_ptr);
+
+		if (unary_ops[info.index].size() < size_t(type) + 1)
+			unary_ops[info.index].resize(size_t(type) + 1);
+
+		auto [iterator, success] = unary_ops[info.index][size_t(type)].try_emplace(signature, unary_operator);
+		return success;
+	}
+
+	bool AddBinaryOp(const Information& info, const BinaryOperator binary_operator, const BinaryOperation type, const FunctionSignature signature)
+	{
+		auto& binary_ops = *Require(binary_ops_ptr);
+
+		if (binary_ops[info.index].size() < size_t(type) + 1)
+			binary_ops[info.index].resize(size_t(type) + 1);
+
+		auto [iterator, success] = binary_ops[info.index][size_t(type)].try_emplace(signature, binary_operator);
+		return success;
 	}
 
 	void DumpInfo()
@@ -516,7 +607,7 @@ namespace Meta
 			++digits;
 		}
 
-		for (const auto& infos = *NullCheck(infos_ptr); const Information& info : infos)
+		for (const auto& infos = *Require(infos_ptr); const Information& info : infos)
 		{
 			Program::Log::Std(kLabel)
 				<< L"Type ID: " << std::setfill(L'0') << std::setw(int(digits)) << info.index
@@ -594,7 +685,14 @@ namespace Meta
 		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
 
-	bool View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
+	bool  View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
+
+	void* View::internal() const
+	{
+		if (is_in_place_primitive())
+			return const_cast<u8*>(&data[0]);
+		return *reinterpret_cast<void**>(const_cast<u8*>(&data[0]));
+	}
 
 	inline Handle::Handle(const Handle& other)
 		: view(other.view)
@@ -739,6 +837,12 @@ namespace Meta
 	bool Spandle::empty() const
 	{
 		return list.empty();
+	}
+
+	void Spandle::allocate(const size_t num_handles)
+	{
+		if (num_handles > 0)
+			list = Memory::get_allocator<Memory::Heap>(Info<Handle>().index)->alloc(num_handles, Spandle());
 	}
 
 	FunctionSignature Spandle::get_function_signature(ParameterArray& memory) const
