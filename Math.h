@@ -57,7 +57,7 @@ namespace Math
 	static constexpr bool kIsFloat = std::is_floating_point_v<T>;
 
 	template<typename T, size_t Dimension> requires (kIsNumber<T> && Dimension > size_t(0))
-	struct Vector
+	struct alignas(T[Dimension]) Vector
 	{
 		T vec[Dimension] = { T() };
 
@@ -184,7 +184,7 @@ constexpr Math::Vector<T, Dimension> operator/(const Math::Vector<T, Dimension>&
 namespace Math
 {
 	template<typename T, size_t Dimension> requires (kIsIntegral<T> && Dimension > size_t(0))
-	struct IntegralVector : public Vector<T, Dimension>
+	struct alignas(T[Dimension]) IntegralVector : public Vector<T, Dimension>
 	{
 		constexpr IntegralVector() = default;
 		constexpr IntegralVector(const IntegralVector&) = default;

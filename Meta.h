@@ -227,7 +227,24 @@ namespace Meta
 			return as<T>();
 		}
 
+		[[nodiscard]] bool is_castable_to(const Information& info) const;
+
+		template<typename U>
+		[[nodiscard]] bool is_castable_to() const
+		{
+			return is_castable_to(Info<U>());
+		}
+
+		template<typename U>
+		[[nodiscard]] View cast_to() const
+		{
+			Program::Assert(is_castable_to<U>(), MK_ASSERT_STATS_CSTR, "Cannot cast to this type!");
+			return get_caster(Info<U>())(*this);
+		}
+
 	private:
+		using Caster = View (*)(const View);
+
 		static constexpr Index kByValue_u8 = kInvalidType - 1;
 		static constexpr Index kByValue_u16 = kByValue_u8 - 1;
 		static constexpr Index kByValue_u32 = kByValue_u16 - 1;
@@ -258,12 +275,12 @@ namespace Meta
 		Qualifier qualifiers = kQualifier_Temporary;
 
 		[[nodiscard]] bool is_in_place_primitive() const;
+		[[nodiscard]] Index get_type() const;
 		[[nodiscard]] void* internal() const;
+		[[nodiscard]] Caster get_caster(const Information& info_b) const;
 
 		friend class Handle;
 		friend class Spandle;
-
-		using Caster = View (*)(const View);
 
 		template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 		friend Caster FromCaster();
@@ -382,12 +399,29 @@ namespace Meta
 
 		explicit operator View() const;
 
+		[[nodiscard]] bool is_convertible_to(const Information& info) const;
+
+		template<typename U>
+		[[nodiscard]] bool is_convertible_to() const
+		{
+			return is_convertible_to(Info<U>());
+		}
+
+		template<typename U>
+		[[nodiscard]] Handle convert_to() const
+		{
+			return get_converter(Info<U>())(view);
+		}
+
 	private:
+		using Converter = Handle (*)(const View);
+
 		View view = View();
 		Memory::Index index = Memory::kInvalidIndex;
 
 		void invalidate();
 		void destroy();
+		[[nodiscard]] Converter get_converter(const Information& info_b) const;
 
 		friend Spandle;
 	};
@@ -443,25 +477,8 @@ namespace Meta
 	// Conversion
 	// -----------------------------------------------------------------------------------------------------------------
 
-	using Converter = Handle (*)(const View);
 	using Caster = View (*)(const View);
-
-	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static Converter FromConverter()
-	{
-		return [](const View view) -> Handle
-		{
-			return Handle(T(view.as<const U&>()));
-		};
-	}
-
-	bool AddConverters(const Information& info_a, Information& info_b, const Converter converter_ab, const Converter converter_ba); // NOLINT(*-avoid-const-params-in-decls)
-
-	template<typename T, typename U>
-	static bool AddConverters()
-	{
-		return AddConverters(Info<T>(), Info<U>(), FromConverter<T, U>(), FromConverter<U, T>());
-	}
+	using Converter = Handle (*)(const View);
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	Caster FromCaster()
@@ -481,6 +498,55 @@ namespace Meta
 	static bool AddCasters()
 	{
 		return AddCasters(Info<T>(), Info<U>(), kCasterOf<U>, kCasterOf<T>);
+	}
+
+	bool IsCastableTo(const Information& info_a, const Information& info_b);
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	static bool IsCastableTo()
+	{
+		return IsCastableTo(Info<T>(), Info<U>());
+	}
+
+	Caster GetCaster(const Information& info_a, const Information& info_b);
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	static Caster GetCaster()
+	{
+		return GetCaster(Info<T>(), Info<U>());
+	}
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	static Converter FromConverter()
+	{
+		return [](const View view) -> Handle
+		{
+			return Handle(T(view.as<const U&>()));
+		};
+	}
+
+	bool AddConverters(const Information& info_a, const Information& info_b, const Converter converter_ab, const Converter converter_ba); // NOLINT(*-avoid-const-params-in-decls)
+
+	template<typename T, typename U>
+	static bool AddConverters()
+	{
+		return AddConverters(Info<T>(), Info<U>(), FromConverter<T, U>(), FromConverter<U, T>());
+	}
+
+	bool IsConvertibleTo(const Information& info_a, const Information& info_b);
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	static bool IsConvertibleTo()
+	{
+		return IsConvertibleTo(Info<T>(), Info<U>());
+	}
+
+	Converter GetConverter(const Information& info_a, const Information& info_b);
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	static Converter GetConverter()
+	{
+		return GetConverter(Info<T>(), Info<U>());
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -528,6 +594,26 @@ namespace Meta
 
 	using Method = Handle (*)(const View, const Spandle&);
 
+	template<typename U>
+	static Handle MapTo(const Handle& handle)
+	{
+		// First, we prefer that this handle is the given type.
+		if (handle.is<U>())
+			return handle;
+
+		// Then we prefer to safely convert to the given type by a conversion construction.
+		if (handle.is_convertible_to<U>())
+			return handle.convert_to<U>();
+
+		// Then we prefer a direct cast as a last resort.
+		if (handle.peek().is_castable_to<U>())
+			return Handle(handle.peek().cast_to<U>());
+
+		// Otherwise this mapping is ill-formed.
+		Program::Assert(false, MK_ASSERT_STATS_CSTR, "Cannot map this handle to the given type!");
+		return {};
+	}
+
 	template<typename T, auto MethodPtr, typename Return, bool IsConst, typename Tuple, std::size_t... Index> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 	static Method FromMethodImpl(std::index_sequence<Index...>)
 	{
@@ -544,20 +630,32 @@ namespace Meta
 					if constexpr (IsConst)
 					{
 						if (view.is<const T>())
-							std::invoke(MethodPtr, view.as<const T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<const T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 						else if (view.is<const T&>())
-							std::invoke(MethodPtr, view.as<const T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<const T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 						else if (view.is<T>())
-							std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 						else
-							std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 					}
 					else
 					{
 						if (view.is<T>())
-							std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 						else
-							std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							std::invoke(MethodPtr, view.as<T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 					}
 				}
 				else
@@ -565,20 +663,32 @@ namespace Meta
 					if constexpr (IsConst)
 					{
 						if (view.is<const T>())
-							result = Handle(std::invoke(MethodPtr, view.as<const T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<const T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 						else if (view.is<const T&>())
-							result = Handle(std::invoke(MethodPtr, view.as<const T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<const T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 						else if (view.is<T>())
-							result = Handle(std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 						else
-							result = Handle(std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 					}
 					else
 					{
 						if (view.is<T>())
-							result = Handle(std::invoke(MethodPtr, view.as<T>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<T>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 						else
-							result = Handle(std::invoke(MethodPtr, view.as<T&>(), parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+							// ReSharper is wrong, template dependent name keyword is required
+							// ReSharper disable once CppRedundantTemplateKeyword
+							result = Handle(std::invoke(MethodPtr, view.as<T&>(), MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 					}
 				}
 			}
@@ -659,9 +769,13 @@ namespace Meta
 				Program::Assert(parameters.size() == sizeof...(Index), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
 
 				if constexpr (std::is_void_v<Return>)
-					(FunctionPtr)(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+					// ReSharper is wrong, template dependent name keyword is required
+					// ReSharper disable once CppRedundantTemplateKeyword
+					(FunctionPtr)(MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 				else
-					result = Handle((FunctionPtr)(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...));
+					// ReSharper is wrong, template dependent name keyword is required
+					// ReSharper disable once CppRedundantTemplateKeyword
+					result = Handle((FunctionPtr)(MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...));
 			}
 			else
 			{
@@ -726,7 +840,9 @@ namespace Meta
 			if constexpr (sizeof...(Index) > 0)
 			{
 				Program::Assert(parameters.size() == sizeof...(Index), MK_ASSERT_STATS_CSTR, "Mismatched parameter number!");
-				new (view.raw<T&>()) T(parameters[Index].template as<std::tuple_element_t<Index, Tuple>>()...);
+				// ReSharper is wrong, template dependent name keyword is required
+				// ReSharper disable once CppRedundantTemplateKeyword
+				new (view.raw<T&>()) T(MapTo<std::tuple_element_t<Index, Tuple>>(parameters[Index]).template as<std::tuple_element_t<Index, Tuple>>()...);
 			}
 			else
 			{

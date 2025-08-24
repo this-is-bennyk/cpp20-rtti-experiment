@@ -38,10 +38,10 @@ SOFTWARE.
 namespace
 {
 	template <typename T>
-	T* Require(T* ptr)
+	T& Require(T* ptr)
 	{
 		Program::Assert(ptr, MK_ASSERT_STATS_CSTR, "Pointer must not be null!");
-		return ptr;
+		return *ptr;
 	}
 }
 
@@ -78,11 +78,11 @@ namespace Meta
 	using  BinaryOpsContainer = std::vector<std::vector<std::unordered_map<FunctionSignature, BinaryOperator>>>;
 	static BinaryOpsContainer* binary_ops_ptr = nullptr;
 
-	using ConvertersContainer = std::vector<std::vector<Converter>>;
-	static ConvertersContainer* converters_ptr = nullptr;
-
 	using  CastersContainer = std::vector<std::vector<Caster>>;
 	static CastersContainer* casters_ptr = nullptr;
+
+	using ConvertersContainer = std::vector<std::vector<Converter>>;
+	static ConvertersContainer* converters_ptr = nullptr;
 }
 
 NAMEOF_DEF(u8);
@@ -353,8 +353,8 @@ namespace Meta
 	{
 		static auto infos         = PreallocateContainer<std::remove_pointer_t<decltype(infos_ptr)>>();
 		static auto name_to_index = PreallocateContainer<std::remove_pointer_t<decltype(name_to_index_ptr)>>();
-		static auto converters    = PreallocateContainer<std::remove_pointer_t<decltype(converters_ptr)>>();
 		static auto casters       = PreallocateContainer<std::remove_pointer_t<decltype(casters_ptr)>>();
+		static auto converters    = PreallocateContainer<std::remove_pointer_t<decltype(converters_ptr)>>();
 
 		static auto constructors = PreallocateContainer<std::remove_pointer_t<decltype(constructors_ptr)>>();
 		static auto destructors  = PreallocateContainer<std::remove_pointer_t<decltype(destructors_ptr)>>();
@@ -370,8 +370,8 @@ namespace Meta
 
 			infos_ptr = &infos;
 			name_to_index_ptr = &name_to_index;
-			converters_ptr = &converters;
 			casters_ptr = &casters;
+			converters_ptr = &converters;
 
 			constructors_ptr = &constructors;
 			destructors_ptr = &destructors;
@@ -389,9 +389,9 @@ namespace Meta
 			Program::Assert(AddPrimitiveIntegralType<i64>(), MK_ASSERT_STATS_CSTR, "Error in initializing i64 into the Meta system!");
 			Program::Assert(AddPrimitiveFloatType<f32>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f32 into the Meta system!");
 			Program::Assert(AddPrimitiveFloatType<f64>(),    MK_ASSERT_STATS_CSTR, "Error in initializing f64 into the Meta system!");
-			Program::Assert(AddPOD<bool>(),   MK_ASSERT_STATS_CSTR, "Error in initializing bool into the Meta system!");
-			Program::Assert(AddPOD<View>(),   MK_ASSERT_STATS_CSTR, "Error in initializing View into the Meta system!");
-			Program::Assert(AddPOD<Handle>(), MK_ASSERT_STATS_CSTR, "Error in initializing Handle into the Meta system!");
+			Program::Assert(AddPOD<bool>(),                  MK_ASSERT_STATS_CSTR, "Error in initializing bool into the Meta system!");
+			Program::Assert(AddPOD<View>(),                  MK_ASSERT_STATS_CSTR, "Error in initializing View into the Meta system!");
+			Program::Assert(AddPOD<Handle>(),                MK_ASSERT_STATS_CSTR, "Error in initializing Handle into the Meta system!");
 		}
 
 		Index index = kInvalidType;
@@ -424,9 +424,9 @@ namespace Meta
 
 	Index Find(const Program::Name name)
 	{
-		const auto iterator = Require(name_to_index_ptr)->find(name);
+		const auto iterator = Require(name_to_index_ptr).find(name);
 
-		if (iterator == Require(name_to_index_ptr)->end())
+		if (iterator == Require(name_to_index_ptr).end())
 			return kInvalidType;
 
 		return iterator->second;
@@ -435,7 +435,7 @@ namespace Meta
 	const Information* Get(const Index type)
 	{
 		Program::Assert(type > kInvalidType && type <= type_counter, MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		return &(*Require(infos_ptr))[type];
+		return &Require(infos_ptr)[type];
 	}
 
 	bool Valid(const Index type_index)
@@ -443,9 +443,43 @@ namespace Meta
 		return type_index > kInvalidType && type_index <= type_counter;
 	}
 
-	bool AddConverters(const Information& info_a, Information& info_b, const Converter converter_ab, const Converter converter_ba)
+	bool AddCasters(const Information& info_a, const Information& info_b, const Caster caster_ab, const Caster caster_ba)
 	{
-		auto& converters = *Require(converters_ptr);
+		auto& casters = Require(casters_ptr);
+
+		if (casters.size() < info_a.index + 1)
+			casters.resize(info_a.index + 1);
+
+		if (casters.size() < info_b.index + 1)
+			casters.resize(info_b.index + 1);
+
+		if (casters[info_a.index].size() < info_b.index + 1)
+			casters[info_a.index].resize(info_b.index + 1);
+
+		if (casters[info_b.index].size() < info_a.index + 1)
+			casters[info_b.index].resize(info_a.index + 1);
+
+		casters[info_a.index][info_b.index] = caster_ab;
+		casters[info_b.index][info_a.index] = caster_ba;
+
+		return true;
+	}
+
+	bool IsCastableTo(const Information& info_a, const Information& info_b)
+	{
+		const auto& casters = Require(casters_ptr);
+		return Valid(info_a.index) && Valid(info_b.index) && info_a.index < casters.size() && info_b.index < casters[info_a.index].size();
+	}
+
+	Caster GetCaster(const Information& info_a, const Information& info_b)
+	{
+		Program::Assert(IsCastableTo(info_a, info_b), MK_ASSERT_STATS_CSTR, "Cannot cast from A to B!");
+		return Require(casters_ptr)[info_a.index][info_b.index];
+	}
+
+	bool AddConverters(const Information& info_a, const Information& info_b, const Converter converter_ab, const Converter converter_ba)
+	{
+		auto& converters = Require(converters_ptr);
 
 		if (converters.size() < info_a.index + 1)
 			converters.resize(info_a.index + 1);
@@ -465,26 +499,16 @@ namespace Meta
 		return true;
 	}
 
-	bool AddCasters(const Information& info_a, const Information& info_b, const Caster caster_ab, const Caster caster_ba)
+	bool IsConvertibleTo(const Information& info_a, const Information& info_b)
 	{
-		auto& casters = *Require(casters_ptr);
+		const auto& converters = Require(converters_ptr);
+		return Valid(info_a.index) && Valid(info_b.index) && info_a.index < converters.size() && info_b.index < converters[info_a.index].size();
+	}
 
-		if (casters.size() < info_a.index + 1)
-			casters.resize(info_a.index + 1);
-
-		if (casters.size() < info_b.index + 1)
-			casters.resize(info_b.index + 1);
-
-		if (casters[info_a.index].size() < info_b.index + 1)
-			casters[info_a.index].resize(info_b.index + 1);
-
-		if (casters[info_b.index].size() < info_a.index + 1)
-			casters[info_b.index].resize(info_a.index + 1);
-
-		casters[info_a.index][info_b.index] = caster_ab;
-		casters[info_b.index][info_a.index] = caster_ba;
-
-		return true;
+	Converter GetConverter(const Information& info_a, const Information& info_b)
+	{
+		Program::Assert(IsConvertibleTo(info_a, info_b), MK_ASSERT_STATS_CSTR, "Cannot convert from A to B!");
+		return Require(converters_ptr)[info_a.index][info_b.index];
 	}
 
 	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited)
@@ -526,13 +550,13 @@ namespace Meta
 
 	bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature)
 	{
-		auto [iterator, success] = (*Require(constructors_ptr))[info.index].try_emplace(signature, constructor);
+		auto [iterator, success] = Require(constructors_ptr)[info.index].try_emplace(signature, constructor);
 		return success;
 	}
 
 	Constructor GetConstructor(const Index type, const FunctionSignature signature)
 	{
-		auto& constructors = *Require(constructors_ptr);
+		auto& constructors = Require(constructors_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(constructors[type].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
@@ -541,13 +565,13 @@ namespace Meta
 
 	bool AddDestructor(const Information& info, const Destructor destructor)
 	{
-		(*Require(destructors_ptr))[info.index] = destructor;
+		Require(destructors_ptr)[info.index] = destructor;
 		return true;
 	}
 
 	Destructor GetDestructor(const Index type)
 	{
-		const auto& destructors = *Require(destructors_ptr);
+		const auto& destructors = Require(destructors_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(destructors[type], MK_ASSERT_STATS_CSTR, "No destructor specified!");
@@ -556,13 +580,13 @@ namespace Meta
 
 	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature)
 	{
-		auto [iterator, success] = (*Require(assigners_ptr))[info.index].try_emplace(signature, assigner);
+		auto [iterator, success] = Require(assigners_ptr)[info.index].try_emplace(signature, assigner);
 		return success;
 	}
 
 	Assigner GetAssigner(const Index type, const FunctionSignature signature)
 	{
-		auto& assigners = *Require(assigners_ptr);
+		auto& assigners = Require(assigners_ptr);
 
 		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		Program::Assert(assigners[type].contains(signature), MK_ASSERT_STATS_CSTR, "No assigner with the specified signature!");
@@ -571,7 +595,7 @@ namespace Meta
 
 	bool AddUnaryOp(const Information& info, const UnaryOperator unary_operator, const UnaryOperation type, const FunctionSignature signature)
 	{
-		auto& unary_ops = *Require(unary_ops_ptr);
+		auto& unary_ops = Require(unary_ops_ptr);
 
 		if (unary_ops[info.index].size() < size_t(type) + 1)
 			unary_ops[info.index].resize(size_t(type) + 1);
@@ -582,7 +606,7 @@ namespace Meta
 
 	bool AddBinaryOp(const Information& info, const BinaryOperator binary_operator, const BinaryOperation type, const FunctionSignature signature)
 	{
-		auto& binary_ops = *Require(binary_ops_ptr);
+		auto& binary_ops = Require(binary_ops_ptr);
 
 		if (binary_ops[info.index].size() < size_t(type) + 1)
 			binary_ops[info.index].resize(size_t(type) + 1);
@@ -607,7 +631,7 @@ namespace Meta
 			++digits;
 		}
 
-		for (const auto& infos = *Require(infos_ptr); const Information& info : infos)
+		for (const auto& infos = Require(infos_ptr); const Information& info : infos)
 		{
 			Program::Log::Std(kLabel)
 				<< L"Type ID: " << std::setfill(L'0') << std::setw(int(digits)) << info.index
@@ -673,7 +697,7 @@ namespace Meta
 		}
 
 		if (is_in_place_primitive())
-			return (std::abs(type) + kByValue_u8) == info.index;
+			return get_type() == info.index;
 
 		if (!(Valid(info.index) && valid()))
 			return false;
@@ -685,13 +709,28 @@ namespace Meta
 		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
 
+	bool View::is_castable_to(const Information& info) const
+	{
+		if (!valid())
+			return false;
+		return IsCastableTo(*Get(get_type()), info);
+	}
+
 	bool  View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
+
+	Index View::get_type() const { return is_in_place_primitive() ? std::abs(type) + kByValue_u8 : type; }
 
 	void* View::internal() const
 	{
 		if (is_in_place_primitive())
 			return const_cast<u8*>(&data[0]);
 		return *reinterpret_cast<void**>(const_cast<u8*>(&data[0]));
+	}
+
+	Caster View::get_caster(const Information& info_b) const
+	{
+		Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "No memory to cast!");
+		return GetCaster(*Get(get_type()), info_b);
 	}
 
 	inline Handle::Handle(const Handle& other)
@@ -786,6 +825,13 @@ namespace Meta
 		return peek();
 	}
 
+	bool Handle::is_convertible_to(const Information& info) const
+	{
+		if (!valid())
+			return false;
+		return IsConvertibleTo(*Get(view.get_type()), info);
+	}
+
 	void Handle::invalidate()
 	{
 		view = Meta::View();
@@ -799,6 +845,12 @@ namespace Meta
 
 		Memory::get_allocator<Memory::Pool>(view.type)->deref(index);
 		invalidate();
+	}
+
+	Converter Handle::get_converter(const Information& info_b) const
+	{
+		Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "No memory to convert!");
+		return GetConverter(*Get(view.get_type()), info_b);
 	}
 
 	Spandle::~Spandle()
@@ -851,11 +903,7 @@ namespace Meta
 		{
 			View view = (*this)[i].view;
 
-			if (view.is_in_place_primitive())
-				memory[i].first = std::abs(view.type) + View::kByValue_u8;
-			else
-				memory[i].first = view.type;
-
+			memory[i].first = view.get_type();
 			memory[i].second = view.qualifiers;
 		}
 
