@@ -63,6 +63,9 @@ namespace Meta
 	using  NameToIndexContainer = std::unordered_map<Program::Name, Index>;
 	static NameToIndexContainer* name_to_index_ptr = nullptr;
 
+	using  SingletonsContainer = std::vector<View>;
+	static SingletonsContainer* singletons_ptr = nullptr;
+
 	using  ConstructorsContainer = std::vector<std::unordered_map<FunctionSignature, Constructor>>;
 	static ConstructorsContainer* constructors_ptr = nullptr;
 
@@ -81,7 +84,7 @@ namespace Meta
 	using  CastersContainer = std::vector<std::vector<Caster>>;
 	static CastersContainer* casters_ptr = nullptr;
 
-	using ConvertersContainer = std::vector<std::vector<Converter>>;
+	using  ConvertersContainer = std::vector<std::vector<Converter>>;
 	static ConvertersContainer* converters_ptr = nullptr;
 }
 
@@ -142,7 +145,7 @@ namespace Memory
 
 		Index alloc(const Meta::Spandle& arguments)
 		{
-			const Meta::Information* info = Meta::Get(type);
+			const Meta::Information& info = *Meta::GetType(type);
 			Index index = kInvalidIndex;
 
 			if (last_deleted != kInvalidIndex)
@@ -161,7 +164,7 @@ namespace Memory
 			}
 			else if (deleted_jump_table.size() < kMaxSize)
 			{
-				data.resize((num_allocated + 1) * info->size, u8(0));
+				data.resize((num_allocated + 1) * info.size, u8(0));
 				deleted_jump_table.push_back(kInvalidIndex);
 				references.push_back(0);
 
@@ -177,8 +180,8 @@ namespace Memory
 
 				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
 				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
-				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
-				constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
+				const Meta::Constructor constructor = Meta::GetConstructor(info, signature);
+				constructor(Meta::View(get(index), info, Meta::kQualifier_Reference), arguments);
 			}
 
 			return index;
@@ -209,11 +212,11 @@ namespace Memory
 
 				--num_allocated;
 
-				const Meta::Information* info = Meta::Get(type);
+				const Meta::Information& info = *Meta::GetType(type);
 
-				Meta::GetDestructor(type)(View(get(index), *info, Meta::kQualifier_Reference));
+				Meta::GetDestructor(info)(View(get(index), info, Meta::kQualifier_Reference));
 
-				std::fill(&data[size_t(index) * info->size], &data[size_t(index + 1) * info->size], u8());
+				std::fill(&data[size_t(index) * info.size], &data[size_t(index + 1) * info.size], u8());
 			}
 		}
 
@@ -224,7 +227,7 @@ namespace Memory
 
 		void* get(const Index index)
 		{
-			return is_valid(index) ? &data[size_t(index) * Meta::Get(type)->size] : nullptr;
+			return is_valid(index) ? &data[size_t(index) * Meta::GetType(type)->size] : nullptr;
 		}
 
 		[[nodiscard]] bool is_deleted(const Index index) const
@@ -260,7 +263,7 @@ namespace Memory
 
 		Range alloc(const size_t size, const Meta::Spandle& arguments)
 		{
-			const Meta::Information* info = Meta::Get(type);
+			const Meta::Information& info = *Meta::GetType(type);
 			Range result(kInvalidIndex, kInvalidIndex);
 
 			if (queue.size() < kMaxSize)
@@ -270,7 +273,7 @@ namespace Memory
 					if (capacity < num_allocated + size)
 					{
 						const size_t new_capacity = std::bit_ceil(num_allocated + size);
-						void* allocation = std::realloc(data, new_capacity * info->size);
+						void* allocation = std::realloc(data, new_capacity * info.size);
 
 						Program::Assert(allocation, MK_ASSERT_STATS_CSTR, "Ran out of memory!");
 
@@ -304,10 +307,10 @@ namespace Memory
 
 				Meta::ParameterArray memory = { std::make_pair(Meta::kInvalidType, Meta::kQualifier_Temporary) };
 				const Meta::FunctionSignature signature = arguments.get_function_signature(memory);
-				const Meta::Constructor constructor = Meta::GetConstructor(type, signature);
+				const Meta::Constructor constructor = Meta::GetConstructor(info, signature);
 
 				for (Index index = result.start; index < result.end; ++index)
-					constructor(Meta::View(get(index), *info, Meta::kQualifier_Reference), arguments);
+					constructor(Meta::View(get(index), info, Meta::kQualifier_Reference), arguments);
 			}
 
 			return result;
@@ -318,10 +321,10 @@ namespace Memory
 			if (range.empty())
 				return;
 
-			const Meta::Information* info = Meta::Get(type);
+			const Meta::Information& info = *Meta::GetType(type);
 
 			for (Index index = range.start; index < range.end; ++index)
-				Meta::GetDestructor(info->index)(View(get(index), *info, Meta::kQualifier_Reference));
+				Meta::GetDestructor(info)(View(get(index), info, Meta::kQualifier_Reference));
 
 			std::fill(std::next(used.begin(), range.start), std::next(used.begin(), range.end), false);
 			queue.push(range);
@@ -331,7 +334,7 @@ namespace Memory
 
 		void* get(const Index index)
 		{
-			return used[index] ? static_cast<u8*>(data) + (size_t(index) * Meta::Get(type)->size) : nullptr;
+			return used[index] ? static_cast<u8*>(data) + (size_t(index) * Meta::GetType(type)->size) : nullptr;
 		}
 
 	private:
@@ -353,6 +356,8 @@ namespace Meta
 	{
 		static auto infos         = PreallocateContainer<std::remove_pointer_t<decltype(infos_ptr)>>();
 		static auto name_to_index = PreallocateContainer<std::remove_pointer_t<decltype(name_to_index_ptr)>>();
+		static auto singletons    = PreallocateContainer<std::remove_pointer_t<decltype(singletons_ptr)>>();
+
 		static auto casters       = PreallocateContainer<std::remove_pointer_t<decltype(casters_ptr)>>();
 		static auto converters    = PreallocateContainer<std::remove_pointer_t<decltype(converters_ptr)>>();
 
@@ -364,12 +369,15 @@ namespace Meta
 
 		static bool initialized = false;
 
-		if (!initialized)
+		if (!initialized) [[unlikely]]
 		{
+			// Must be set before calls below to prevent the recursion from going any further
 			initialized = true;
 
 			infos_ptr = &infos;
 			name_to_index_ptr = &name_to_index;
+			singletons_ptr = &singletons;
+
 			casters_ptr = &casters;
 			converters_ptr = &converters;
 
@@ -409,12 +417,22 @@ namespace Meta
 			);
 
 			name_to_index.insert_or_assign(name, index);
+			singletons.emplace_back();
+
+			casters.emplace_back();
+			casters.back().reserve(kPreallocationAmount);
+			converters.emplace_back();
+			converters.back().reserve(kPreallocationAmount);
 
 			constructors.emplace_back();
+			constructors.back().reserve(kPreallocationAmount);
 			destructors.push_back(nullptr);
 			assigners.emplace_back();
+			assigners.back().reserve(kPreallocationAmount);
 			unary_ops.emplace_back();
+			unary_ops.back().reserve(kPreallocationAmount);
 			binary_ops.emplace_back();
+			binary_ops.back().reserve(kPreallocationAmount);
 		}
 		else
 			index = name_to_index.find(name)->second;
@@ -432,7 +450,7 @@ namespace Meta
 		return iterator->second;
 	}
 
-	const Information* Get(const Index type)
+	const Information* GetType(const Index type)
 	{
 		Program::Assert(type > kInvalidType && type <= type_counter, MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
 		return &Require(infos_ptr)[type];
@@ -443,24 +461,16 @@ namespace Meta
 		return type_index > kInvalidType && type_index <= type_counter;
 	}
 
-	bool AddCasters(const Information& info_a, const Information& info_b, const Caster caster_ab, const Caster caster_ba)
+	bool AddCaster(const Information& info_a, const Information& info_b, const Caster caster_ab)
 	{
+		Program::Assert(Valid(info_a.index) && Valid(info_b.index) && caster_ab, MK_ASSERT_STATS_CSTR, "Invalid parameters!");
+
 		auto& casters = Require(casters_ptr);
 
-		if (casters.size() < info_a.index + 1)
-			casters.resize(info_a.index + 1);
-
-		if (casters.size() < info_b.index + 1)
-			casters.resize(info_b.index + 1);
-
 		if (casters[info_a.index].size() < info_b.index + 1)
-			casters[info_a.index].resize(info_b.index + 1);
-
-		if (casters[info_b.index].size() < info_a.index + 1)
-			casters[info_b.index].resize(info_a.index + 1);
+			casters[info_a.index].resize(info_b.index + 1, nullptr);
 
 		casters[info_a.index][info_b.index] = caster_ab;
-		casters[info_b.index][info_a.index] = caster_ba;
 
 		return true;
 	}
@@ -468,7 +478,7 @@ namespace Meta
 	bool IsCastableTo(const Information& info_a, const Information& info_b)
 	{
 		const auto& casters = Require(casters_ptr);
-		return Valid(info_a.index) && Valid(info_b.index) && info_a.index < casters.size() && info_b.index < casters[info_a.index].size();
+		return Valid(info_a.index) && Valid(info_b.index) && info_b.index < casters[info_a.index].size() && casters[info_a.index][info_b.index];
 	}
 
 	Caster GetCaster(const Information& info_a, const Information& info_b)
@@ -477,24 +487,14 @@ namespace Meta
 		return Require(casters_ptr)[info_a.index][info_b.index];
 	}
 
-	bool AddConverters(const Information& info_a, const Information& info_b, const Converter converter_ab, const Converter converter_ba)
+	bool AddConverter(const Information& info_a, const Information& info_b, const Converter converter_ab)
 	{
 		auto& converters = Require(converters_ptr);
 
-		if (converters.size() < info_a.index + 1)
-			converters.resize(info_a.index + 1);
-
-		if (converters.size() < info_b.index + 1)
-			converters.resize(info_b.index + 1);
-
 		if (converters[info_a.index].size() < info_b.index + 1)
-			converters[info_a.index].resize(info_b.index + 1);
-
-		if (converters[info_b.index].size() < info_a.index + 1)
-			converters[info_b.index].resize(info_a.index + 1);
+			converters[info_a.index].resize(info_b.index + 1, nullptr);
 
 		converters[info_a.index][info_b.index] = converter_ab;
-		converters[info_b.index][info_a.index] = converter_ba;
 
 		return true;
 	}
@@ -502,7 +502,7 @@ namespace Meta
 	bool IsConvertibleTo(const Information& info_a, const Information& info_b)
 	{
 		const auto& converters = Require(converters_ptr);
-		return Valid(info_a.index) && Valid(info_b.index) && info_a.index < converters.size() && info_b.index < converters[info_a.index].size();
+		return Valid(info_a.index) && Valid(info_b.index) && info_b.index < converters[info_a.index].size() && converters[info_a.index][info_b.index];
 	}
 
 	Converter GetConverter(const Information& info_a, const Information& info_b)
@@ -530,7 +530,7 @@ namespace Meta
 			derived_info.bases[parent] = true;
 			++derived_info.num_bases;
 
-			const Information& parent_info = *Get(parent);
+			const Information& parent_info = *GetType(parent);
 			std::vector<Index> parent_inherited;
 
 			parent_inherited.reserve(parent_info.num_bases);
@@ -554,13 +554,12 @@ namespace Meta
 		return success;
 	}
 
-	Constructor GetConstructor(const Index type, const FunctionSignature signature)
+	Constructor GetConstructor(const Information& info, const FunctionSignature signature)
 	{
 		auto& constructors = Require(constructors_ptr);
 
-		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		Program::Assert(constructors[type].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
-		return constructors[type][signature];
+		Program::Assert(constructors[info.index].contains(signature), MK_ASSERT_STATS_CSTR, "No constructor with the specified signature!");
+		return constructors[info.index][signature];
 	}
 
 	bool AddDestructor(const Information& info, const Destructor destructor)
@@ -569,13 +568,12 @@ namespace Meta
 		return true;
 	}
 
-	Destructor GetDestructor(const Index type)
+	Destructor GetDestructor(const Information& info)
 	{
 		const auto& destructors = Require(destructors_ptr);
 
-		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		Program::Assert(destructors[type], MK_ASSERT_STATS_CSTR, "No destructor specified!");
-		return destructors[type];
+		Program::Assert(destructors[info.index], MK_ASSERT_STATS_CSTR, "No destructor specified!");
+		return destructors[info.index];
 	}
 
 	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature)
@@ -584,13 +582,12 @@ namespace Meta
 		return success;
 	}
 
-	Assigner GetAssigner(const Index type, const FunctionSignature signature)
+	Assigner GetAssigner(const Information& info, const FunctionSignature signature)
 	{
 		auto& assigners = Require(assigners_ptr);
 
-		Program::Assert(Valid(type), MK_ASSERT_STATS_CSTR, "Type index out of bounds!");
-		Program::Assert(assigners[type].contains(signature), MK_ASSERT_STATS_CSTR, "No assigner with the specified signature!");
-		return assigners[type][signature];
+		Program::Assert(assigners[info.index].contains(signature), MK_ASSERT_STATS_CSTR, "No assigner with the specified signature!");
+		return assigners[info.index][signature];
 	}
 
 	bool AddUnaryOp(const Information& info, const UnaryOperator unary_operator, const UnaryOperation type, const FunctionSignature signature)
@@ -705,7 +702,7 @@ namespace Meta
 		if (type == info.index)
 			return true;
 
-		const Information* my_info = Get(type);
+		const Information* my_info = GetType(type);
 		return size_t(info.index) < my_info->bases.size() && my_info->bases[info.index];
 	}
 
@@ -713,7 +710,7 @@ namespace Meta
 	{
 		if (!valid())
 			return false;
-		return IsCastableTo(*Get(get_type()), info);
+		return IsCastableTo(*GetType(get_type()), info);
 	}
 
 	bool  View::is_in_place_primitive() const { return type < kInvalidType && type >= kByValue_bool; }
@@ -730,7 +727,21 @@ namespace Meta
 	Caster View::get_caster(const Information& info_b) const
 	{
 		Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "No memory to cast!");
-		return GetCaster(*Get(get_type()), info_b);
+		return GetCaster(*GetType(get_type()), info_b);
+	}
+
+	bool AddSingleton(const Information& info, const View view)
+	{
+		Require(singletons_ptr)[info.index] = view;
+		return true;
+	}
+
+	View GetSingleton(const Information& info)
+	{
+		const View singleton = Require(singletons_ptr)[info.index];
+
+		Program::Assert(singleton.valid() && singleton.is(info, kQualifier_Reference), MK_ASSERT_STATS_CSTR, "No singleton found!");
+		return singleton;
 	}
 
 	inline Handle::Handle(const Handle& other)
@@ -829,7 +840,7 @@ namespace Meta
 	{
 		if (!valid())
 			return false;
-		return IsConvertibleTo(*Get(view.get_type()), info);
+		return IsConvertibleTo(*GetType(view.get_type()), info);
 	}
 
 	void Handle::invalidate()
@@ -850,7 +861,7 @@ namespace Meta
 	Converter Handle::get_converter(const Information& info_b) const
 	{
 		Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "No memory to convert!");
-		return GetConverter(*Get(view.get_type()), info_b);
+		return GetConverter(*GetType(view.get_type()), info_b);
 	}
 
 	Spandle::~Spandle()

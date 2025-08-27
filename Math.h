@@ -45,7 +45,7 @@ using f64 = double;
 namespace Math
 {
 	using DefaultInt = i64;
-	using DefaultFloat = f32;
+	using DefaultFloat = f64;
 
 	template<typename T>
 	static constexpr bool kIsNumber = !std::is_same_v<T, bool> && std::is_arithmetic_v<T>;
@@ -316,15 +316,113 @@ constexpr Math::IntegralVector<T, Dimension> operator>>(const Math::IntegralVect
 
 namespace Math
 {
-	template<typename T> requires (kIsFloat<T>) using Vector1 = Vector<T, 1>;
-	template<typename T> requires (kIsFloat<T>) using Vector2 = Vector<T, 2>;
-	template<typename T> requires (kIsFloat<T>) using Vector3 = Vector<T, 3>;
-	template<typename T> requires (kIsFloat<T>) using Vector4 = Vector<T, 4>;
+	template<typename T> requires (kIsFloat<T>)
+	struct alignas(Vector<T, 1>) Vector1 : public Vector<T, 1>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+	};
 
-	template<typename T> requires (kIsIntegral<T>) using Vector1I = IntegralVector<T, 1>;
-	template<typename T> requires (kIsIntegral<T>) using Vector2I = IntegralVector<T, 2>;
-	template<typename T> requires (kIsIntegral<T>) using Vector3I = IntegralVector<T, 3>;
-	template<typename T> requires (kIsIntegral<T>) using Vector4I = IntegralVector<T, 4>;
+	template<typename T> requires (kIsIntegral<T>)
+	struct alignas(Vector<T, 1>) Vector1I : public IntegralVector<T, 1>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+	};
+
+	template<typename T> requires (kIsFloat<T>)
+	struct alignas(Vector<T, 2>) Vector2 : public Vector<T, 2>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+	};
+
+	template<typename T> requires (kIsIntegral<T>)
+	struct alignas(Vector<T, 2>) Vector2I : public IntegralVector<T, 2>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+	};
+
+	template<typename T> requires (kIsFloat<T>)
+	struct alignas(Vector<T, 3>) Vector3 : public Vector<T, 3>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+
+		      T& z()       { return this->vec[2]; }
+		const T& z() const { return this->vec[2]; }
+	};
+
+	template<typename T> requires (kIsIntegral<T>)
+	struct alignas(Vector<T, 3>) Vector3I : public IntegralVector<T, 3>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+
+		      T& z()       { return this->vec[2]; }
+		const T& z() const { return this->vec[2]; }
+	};
+
+	template<typename T> requires (kIsFloat<T>)
+	struct alignas(Vector<T, 4>) Vector4 : public Vector<T, 4>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+		      T& r()       { return this->vec[0]; }
+		const T& r() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+		      T& g()       { return this->vec[1]; }
+		const T& g() const { return this->vec[1]; }
+
+		      T& z()       { return this->vec[2]; }
+		const T& z() const { return this->vec[2]; }
+		      T& b()       { return this->vec[2]; }
+		const T& b() const { return this->vec[2]; }
+
+		      T& w()       { return this->vec[3]; }
+		const T& w() const { return this->vec[3]; }
+		      T& a()       { return this->vec[3]; }
+		const T& a() const { return this->vec[3]; }
+	};
+
+	template<typename T> requires (kIsIntegral<T>)
+	struct alignas(Vector<T, 4>) Vector4I : public IntegralVector<T, 4>
+	{
+		      T& x()       { return this->vec[0]; }
+		const T& x() const { return this->vec[0]; }
+		      T& r()       { return this->vec[0]; }
+		const T& r() const { return this->vec[0]; }
+
+		      T& y()       { return this->vec[1]; }
+		const T& y() const { return this->vec[1]; }
+		      T& g()       { return this->vec[1]; }
+		const T& g() const { return this->vec[1]; }
+
+		      T& z()       { return this->vec[2]; }
+		const T& z() const { return this->vec[2]; }
+		      T& b()       { return this->vec[2]; }
+		const T& b() const { return this->vec[2]; }
+
+		      T& w()       { return this->vec[3]; }
+		const T& w() const { return this->vec[3]; }
+		      T& a()       { return this->vec[3]; }
+		const T& a() const { return this->vec[3]; }
+	};
 
 	template<typename T, size_t Dimension>
 	constexpr T Dot(const Vector<T, Dimension>& a, const Vector<T, Dimension>& b)
@@ -337,8 +435,27 @@ namespace Math
 		return result;
 	}
 
-	template<typename T, size_t Dimension>
+	template<typename T, size_t DimensionA, size_t DimensionB>
+	constexpr T Dot(const Vector<T, DimensionA>& a, const Vector<T, DimensionB>& b)
+	{
+		T result = T();
+
+		// Skipping the remaining components is equivalent to multiplying by 0 and adding it to the result.
+		// (The lower dimension vector is projected to the higher dimension, but at the origins of the extra axes.)
+		for (size_t i = 0; i < (std::min)(DimensionA, DimensionB); ++i)
+			result += a[i] * b[i];
+
+		return result;
+	}
+
+	template<typename T, size_t Dimension> requires (std::is_signed_v<T>)
 	constexpr bool BehindRelative(const Vector<T, Dimension>& a, const Vector<T, Dimension>& b)
+	{
+		return Dot(a, b) < T();
+	}
+
+	template<typename T, size_t DimensionA, size_t DimensionB> requires (std::is_signed_v<T>)
+	constexpr bool BehindRelative(const Vector<T, DimensionA>& a, const Vector<T, DimensionB>& b)
 	{
 		return Dot(a, b) < T();
 	}
@@ -346,7 +463,13 @@ namespace Math
 	template<typename T, size_t Dimension>
 	constexpr bool BehindAbsolute(const Vector<T, Dimension>& a, const Vector<T, Dimension>& b)
 	{
-		return Dot(a, Vector<T, Dimension>::One()) < Dot(a, Vector<T, Dimension>::One());
+		return Dot(a, Vector<T, Dimension>::One()) < Dot(b, Vector<T, Dimension>::One());
+	}
+
+	template<typename T, size_t DimensionA, size_t DimensionB>
+	constexpr bool BehindAbsolute(const Vector<T, DimensionA>& a, const Vector<T, DimensionB>& b)
+	{
+		return Dot(a, Vector<T, DimensionA>::One()) < Dot(b, Vector<T, DimensionB>::One());
 	}
 
 	template<typename T, size_t Dimension>
@@ -369,51 +492,6 @@ namespace Math
 				return false;
 		}
 		return true;
-	}
-
-	namespace Axes
-	{
-		template<typename T, size_t Dimension>
-		using Function = T& (*)(Vector<T, Dimension>&);
-
-		template<typename T, size_t Dimension>
-		constexpr T& X(Vector<T, Dimension>& v) { return v[0]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(1))
-		constexpr T& Y(Vector<T, Dimension>& v) { return v[1]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(2))
-		constexpr T& Z(Vector<T, Dimension>& v) { return v[2]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(3))
-		constexpr T& W(Vector<T, Dimension>& v) { return v[3]; }
-
-		template<typename T, size_t Dimension>
-		constexpr T& R(Vector<T, Dimension>& v) { return v[0]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(1))
-		constexpr T& G(Vector<T, Dimension>& v) { return v[1]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(2))
-		constexpr T& B(Vector<T, Dimension>& v) { return v[2]; }
-
-		template<typename T, size_t Dimension> requires (Dimension > size_t(3))
-		constexpr T& A(Vector<T, Dimension>& v) { return v[3]; }
-	}
-
-	template<typename T, size_t Dimension, Axes::Function<T, Dimension>... AxisFunctions>
-	constexpr Vector<T, Dimension>& Swizzle(Vector<T, Dimension>& v)
-	{
-		static_assert(sizeof...(AxisFunctions) <= Dimension, "Too many axis functions!");
-
-		Vector<T, Dimension> result = v;
-		// ReSharper disable once CppDFAUnreadVariable
-		size_t index = 0;
-
-		([&]() { result[index++] = AxisFunctions(v); }(), ...);
-
-		v = result;
-		return v;
 	}
 }
 

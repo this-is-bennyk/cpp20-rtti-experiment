@@ -50,7 +50,7 @@ namespace Meta
 	}
 
 	template<typename T>
-	static constexpr bool kIsPrimitive =
+	constexpr bool kIsPrimitive =
 	   std::is_same_v<std::remove_cvref_t<T>, u8>
 	|| std::is_same_v<std::remove_cvref_t<T>, u16>
 	|| std::is_same_v<std::remove_cvref_t<T>, u32>
@@ -64,16 +64,16 @@ namespace Meta
 	|| std::is_same_v<std::remove_cvref_t<T>, bool>;
 
 	using Index = i32;
-	static constexpr Index kInvalidType = -1;
+	constexpr Index kInvalidType = -1;
 
 	using Qualifier = u8;
-	static constexpr u8 kQualifier_Temporary = 0b0001;
-	static constexpr u8 kQualifier_Constant  = 0b0010;
-	static constexpr u8 kQualifier_Volatile  = 0b0100;
-	static constexpr u8 kQualifier_Reference = 0b1000;
+	constexpr u8 kQualifier_Temporary = 0b0001;
+	constexpr u8 kQualifier_Constant  = 0b0010;
+	constexpr u8 kQualifier_Volatile  = 0b0100;
+	constexpr u8 kQualifier_Reference = 0b1000;
 
 	template<typename T> requires (!(std::is_pointer_v<T>))
-	static constexpr auto QualifiersOf = Qualifier(
+	constexpr auto QualifiersOf = Qualifier(
 		  (u8(std::is_rvalue_reference_v<T> || std::is_same_v<T, std::remove_cvref_t<T>>) << u8(0))
 		| (u8(std::is_const_v<std::remove_reference_t<T>>) << u8(1))
 		| (u8(std::is_volatile_v<std::remove_reference_t<T>>) << u8(2))
@@ -93,25 +93,25 @@ namespace Meta
 	std::pair<std::vector<Information>*, Index> Register(Program::Name name, size_t size);
 
 	template<typename T>
-	static const Information& Info()
+	const Information& Info()
 	{
 		using Type = std::remove_pointer_t<std::remove_cvref_t<T>>;
 		static const auto infos_pair = Register(nameof<Type>(), sizeof(Type));
 		return (*infos_pair.first)[infos_pair.second];
 	}
 
-	static Index Find(Program::Name name);
+	Index Find(Program::Name name);
 
 	template<typename T>
-	static Index Find()
+	Index Find()
 	{
 		return Find(nameof<T>());
 	}
 
-	static const Information* Get(Index type);
+	const Information* GetType(Index type);
 
 	template<typename... Args>
-	static bool RegistrationSuccessful(Args... args)
+	bool RegistrationSuccessful(Args... args)
 	{
 		if constexpr (sizeof...(args) > 0)
 		{
@@ -126,7 +126,7 @@ namespace Meta
 		return true;
 	}
 
-	static bool Valid(Index type_index);
+	bool Valid(Index type_index);
 
 	void DumpInfo();
 
@@ -285,12 +285,28 @@ namespace Meta
 		template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
 		friend Caster FromCaster();
 	};
+
+	bool AddSingleton(const Information& info, const View view); // NOLINT(*-avoid-const-params-in-decls)
+
+	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<T>>)
+	bool AddSingleton()
+	{
+		return AddSingleton(Info<T>(), View(GetGlobal<T>()));
+	}
+
+	View GetSingleton(const Information& info);
+
+	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<T>>)
+	View GetSingleton()
+	{
+		return GetSingleton(Info<T>());
+	}
 }
 
 namespace Memory
 {
 	using Index = i64;
-	static constexpr Index kInvalidIndex = -1;
+	constexpr Index kInvalidIndex = -1;
 
 	struct Range
 	{
@@ -314,7 +330,7 @@ namespace Memory
 namespace Meta
 {
 	using Parameter = std::pair<Index, Qualifier>;
-	static constexpr u64 kMaximumParameters = 256;
+	constexpr u64 kMaximumParameters = 256;
 
 	using ParameterArray = std::array<Parameter, kMaximumParameters>;
 	using FunctionSignature = std::string_view;
@@ -489,21 +505,27 @@ namespace Meta
 		};
 	}
 
-	template<typename T>
-	static Caster kCasterOf = FromCaster<T>();
+	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
+	Caster kCasterOf = FromCaster<T>();
 
-	bool AddCasters(const Information& info_a, const Information& info_b, const Caster caster_ab, const Caster caster_ba); // NOLINT(*-avoid-const-params-in-decls)
+	bool AddCaster(const Information& info_a, const Information& info_b, const Caster caster_ab); // NOLINT(*-avoid-const-params-in-decls)
 
-	template<typename T, typename U>
-	static bool AddCasters()
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	bool AddCaster()
 	{
-		return AddCasters(Info<T>(), Info<U>(), kCasterOf<U>, kCasterOf<T>);
+		return AddCaster(Info<T>(), Info<U>(), kCasterOf<U>);
+	}
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	bool AddTwoWayCast()
+	{
+		return AddCaster(Info<T>(), Info<U>(), kCasterOf<U>) && AddCaster(Info<U>(), Info<T>(), kCasterOf<T>);
 	}
 
 	bool IsCastableTo(const Information& info_a, const Information& info_b);
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static bool IsCastableTo()
+	bool IsCastableTo()
 	{
 		return IsCastableTo(Info<T>(), Info<U>());
 	}
@@ -511,13 +533,13 @@ namespace Meta
 	Caster GetCaster(const Information& info_a, const Information& info_b);
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static Caster GetCaster()
+	Caster GetCaster()
 	{
 		return GetCaster(Info<T>(), Info<U>());
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static Converter FromConverter()
+	Converter FromConverter()
 	{
 		return [](const View view) -> Handle
 		{
@@ -525,18 +547,24 @@ namespace Meta
 		};
 	}
 
-	bool AddConverters(const Information& info_a, const Information& info_b, const Converter converter_ab, const Converter converter_ba); // NOLINT(*-avoid-const-params-in-decls)
+	bool AddConverter(const Information& info_a, const Information& info_b, const Converter converter_ab); // NOLINT(*-avoid-const-params-in-decls)
 
-	template<typename T, typename U>
-	static bool AddConverters()
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	bool AddConverter()
 	{
-		return AddConverters(Info<T>(), Info<U>(), FromConverter<T, U>(), FromConverter<U, T>());
+		return AddConverter(Info<T>(), Info<U>(), FromConverter<T, U>());
+	}
+
+	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
+	bool AddTwoWayConversion()
+	{
+		return AddConverter(Info<T>(), Info<U>(), FromConverter<T, U>()) && AddConverter(Info<U>(), Info<T>(), FromConverter<U, T>());
 	}
 
 	bool IsConvertibleTo(const Information& info_a, const Information& info_b);
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static bool IsConvertibleTo()
+	bool IsConvertibleTo()
 	{
 		return IsConvertibleTo(Info<T>(), Info<U>());
 	}
@@ -544,7 +572,7 @@ namespace Meta
 	Converter GetConverter(const Information& info_a, const Information& info_b);
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static Converter GetConverter()
+	Converter GetConverter()
 	{
 		return GetConverter(Info<T>(), Info<U>());
 	}
@@ -556,7 +584,7 @@ namespace Meta
 	bool AddInheritance(Information& derived_info, const std::vector<Index>& directly_inherited);
 
 	template<typename T, typename... DirectlyInherited>
-	static bool AddInheritance()
+	bool AddInheritance()
 	{
 		const std::vector<Index> directly_inherited{ ((Info<DirectlyInherited>().index), ...) };
 		return AddInheritance(const_cast<Information&>(Info<T>()), directly_inherited);
@@ -595,7 +623,7 @@ namespace Meta
 	using Method = Handle (*)(const View, const Spandle&);
 
 	template<typename U>
-	static Handle MapTo(const Handle& handle)
+	Handle MapTo(const Handle& handle)
 	{
 		// First, we prefer that this handle is the given type.
 		if (handle.is<U>())
@@ -615,7 +643,7 @@ namespace Meta
 	}
 
 	template<typename T, auto MethodPtr, typename Return, bool IsConst, typename Tuple, std::size_t... Index> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Method FromMethodImpl(std::index_sequence<Index...>)
+	Method FromMethodImpl(std::index_sequence<Index...>)
 	{
 		return [](const View view, const Spandle& parameters) -> Handle
 		{
@@ -745,7 +773,7 @@ namespace Meta
 	}
 
 	template<typename T, auto MethodPtr, typename Return, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Method FromMethod()
+	Method FromMethod()
 	{
 		static_assert(std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...)> || std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...) const>, "MethodPtr is not a valid method pointer!");
 		return FromMethodImpl<T, MethodPtr, Return, std::is_same_v<decltype(MethodPtr), Return (T::*)(Args...) const>, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
@@ -758,7 +786,7 @@ namespace Meta
 	using Function = Handle (*)(const Spandle&);
 
 	template<auto FunctionPtr, typename Return, typename Tuple, std::size_t... Index>
-	static Function FromFunctionImpl(std::index_sequence<Index...>)
+	Function FromFunctionImpl(std::index_sequence<Index...>)
 	{
 		return [](const Spandle& parameters) -> Handle
 		{
@@ -792,7 +820,7 @@ namespace Meta
 	}
 
 	template<auto FunctionPtr, typename Return, typename... Args>
-	static Function FromFunction()
+	Function FromFunction()
 	{
 		static_assert(std::is_same_v<decltype(FunctionPtr), Return (*)(Args...)>, "FunctionPtr is not a valid function pointer!");
 		return FromFunctionImpl<FunctionPtr, Return, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
@@ -805,7 +833,7 @@ namespace Meta
 	using Member = Handle (*)(const View);
 
 	template<auto MemberPtr, typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Member FromMemberImpl()
+	Member FromMemberImpl()
 	{
 		return [](const View view) -> Handle
 		{
@@ -820,7 +848,7 @@ namespace Meta
 	}
 
 	template<typename T, auto MemberPtr, typename Return> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Member FromMember()
+	Member FromMember()
 	{
 		static_assert(std::is_same_v<decltype(MemberPtr), Return (T::*)>, "MemberPtr is not a valid member pointer!");
 		return FromMemberImpl<MemberPtr, T>();
@@ -833,7 +861,7 @@ namespace Meta
 	using Constructor = void (*)(const View, const Spandle&);
 
 	template<typename T, typename Tuple, std::size_t... Index> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Constructor FromCtorImpl(std::index_sequence<Index...>)
+	Constructor FromCtorImpl(std::index_sequence<Index...>)
 	{
 		return [](const View view, const Spandle& parameters) -> void
 		{
@@ -853,7 +881,7 @@ namespace Meta
 	}
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Constructor FromCtor()
+	Constructor FromCtor()
 	{
 		return FromCtorImpl<T, std::tuple<Args...>>(std::index_sequence_for<Args...>{});
 	}
@@ -861,17 +889,17 @@ namespace Meta
 	bool AddConstructor(const Information& info, const Constructor constructor, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddConstructor()
+	bool AddConstructor()
 	{
 		return AddConstructor(Info<T>(), FromCtor<T, Args...>(), FromParameterList<Args...>());
 	}
 
-	Constructor GetConstructor(const Index type, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
+	Constructor GetConstructor(const Information& info, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Constructor GetConstructor()
+	Constructor GetConstructor()
 	{
-		return GetConstructor(Info<T>().index, FromParameterList<Args...>());
+		return GetConstructor(Info<T>(), FromParameterList<Args...>());
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -881,7 +909,7 @@ namespace Meta
 	using Destructor = void (*)(const View);
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Destructor FromDtor()
+	Destructor FromDtor()
 	{
 		return [](const View view) -> void
 		{
@@ -892,17 +920,17 @@ namespace Meta
 	bool AddDestructor(const Information& info, const Destructor destructor); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddDestructor()
+	bool AddDestructor()
 	{
 		return AddDestructor(Info<T>(), FromDtor<T>());
 	}
 
-	Destructor GetDestructor(const Index type); // NOLINT(*-avoid-const-params-in-decls)
+	Destructor GetDestructor(const Information& info); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Destructor GetDestructor()
+	Destructor GetDestructor()
 	{
-		return GetDestructor(Info<T>().index);
+		return GetDestructor(Info<T>());
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -912,7 +940,7 @@ namespace Meta
 	using Assigner = View (*)(const View, const Spandle&);
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static Assigner FromAssignOp()
+	Assigner FromAssignOp()
 	{
 		return [](const View view, const Spandle& parameters) -> View
 		{
@@ -925,17 +953,17 @@ namespace Meta
 	bool AddAssigner(const Information& info, const Assigner assigner, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddAssigner()
+	bool AddAssigner()
 	{
 		return AddAssigner(Info<T>(), FromAssignOp<T, U>(), FromParameterList<U>());
 	}
 
-	Assigner GetAssigner(const Index type, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
+	Assigner GetAssigner(const Information& info, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, typename... Args>
-	static Assigner GetAssigner()
+	Assigner GetAssigner()
 	{
-		return GetAssigner(Info<T>().index, FromParameterList<Args...>());
+		return GetAssigner(Info<T>(), FromParameterList<Args...>());
 	}
 
 	// -----------------------------------------------------------------------------------------------------------------
@@ -948,7 +976,7 @@ namespace Meta
 	// Math
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromPositive()
+	UnaryOperator FromPositive()
 	{
 		return [](const View view) -> Handle
 		{
@@ -957,7 +985,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromNegative()
+	UnaryOperator FromNegative()
 	{
 		return [](const View view) -> Handle
 		{
@@ -966,7 +994,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromPrefixIncrement()
+	UnaryOperator FromPrefixIncrement()
 	{
 		return [](const View view) -> Handle
 		{
@@ -976,7 +1004,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromPostfixIncrement()
+	UnaryOperator FromPostfixIncrement()
 	{
 		return [](const View view) -> Handle
 		{
@@ -985,7 +1013,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromPrefixDecrement()
+	UnaryOperator FromPrefixDecrement()
 	{
 		return [](const View view) -> Handle
 		{
@@ -995,7 +1023,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromPostfixDecrement()
+	UnaryOperator FromPostfixDecrement()
 	{
 		return [](const View view) -> Handle
 		{
@@ -1004,7 +1032,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromAddEquals()
+	BinaryOperator FromAddEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1014,7 +1042,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromAdd()
+	BinaryOperator FromAdd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1023,7 +1051,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromSubEquals()
+	BinaryOperator FromSubEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1033,7 +1061,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromSub()
+	BinaryOperator FromSub()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1042,7 +1070,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromMulEquals()
+	BinaryOperator FromMulEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1052,7 +1080,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromMul()
+	BinaryOperator FromMul()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1061,7 +1089,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromDivEquals()
+	BinaryOperator FromDivEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1071,7 +1099,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromDiv()
+	BinaryOperator FromDiv()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1080,7 +1108,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromModEquals()
+	BinaryOperator FromModEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1090,7 +1118,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromMod()
+	BinaryOperator FromMod()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1101,7 +1129,7 @@ namespace Meta
 	// Bit Manipulation
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromBitwiseNot()
+	UnaryOperator FromBitwiseNot()
 	{
 		return [](const View view) -> Handle
 		{
@@ -1110,7 +1138,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseAndEquals()
+	BinaryOperator FromBitwiseAndEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1120,7 +1148,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseAnd()
+	BinaryOperator FromBitwiseAnd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1129,7 +1157,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseOrEquals()
+	BinaryOperator FromBitwiseOrEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1139,7 +1167,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseOr()
+	BinaryOperator FromBitwiseOr()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1148,7 +1176,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseXorEquals()
+	BinaryOperator FromBitwiseXorEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1158,7 +1186,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseXor()
+	BinaryOperator FromBitwiseXor()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1167,7 +1195,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseLeftShiftEquals()
+	BinaryOperator FromBitwiseLeftShiftEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1177,7 +1205,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseLeftShift()
+	BinaryOperator FromBitwiseLeftShift()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1186,7 +1214,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseRightShiftEquals()
+	BinaryOperator FromBitwiseRightShiftEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1196,7 +1224,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromBitwiseRightShift()
+	BinaryOperator FromBitwiseRightShift()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1207,7 +1235,7 @@ namespace Meta
 	// Unary Conditions
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static UnaryOperator FromLogicalNot()
+	UnaryOperator FromLogicalNot()
 	{
 		return [](const View a) -> Handle
 		{
@@ -1216,7 +1244,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromLogicalAnd()
+	BinaryOperator FromLogicalAnd()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1225,7 +1253,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static BinaryOperator FromLogicalOr()
+	BinaryOperator FromLogicalOr()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1236,7 +1264,7 @@ namespace Meta
 	// Comparison Conditions
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromEquals()
+	BinaryOperator FromEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1245,7 +1273,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromNotEquals()
+	BinaryOperator FromNotEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1254,7 +1282,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromLessThan()
+	BinaryOperator FromLessThan()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1263,7 +1291,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromLessThanOrEquals()
+	BinaryOperator FromLessThanOrEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1272,7 +1300,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromGreaterThan()
+	BinaryOperator FromGreaterThan()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1281,7 +1309,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static BinaryOperator FromGreaterThanOrEquals()
+	BinaryOperator FromGreaterThanOrEquals()
 	{
 		return [](const View a, const View b) -> Handle
 		{
@@ -1351,7 +1379,7 @@ namespace Meta
 	bool AddBinaryOp(const Information& info, const BinaryOperator binary_operator, const BinaryOperation type, const FunctionSignature signature); // NOLINT(*-avoid-const-params-in-decls)
 
 	template<typename T, UnaryOperation Op> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddUnaryOp()
+	bool AddUnaryOp()
 	{
 		static_assert(Op >= kUnaryOperation_Initial && Op < kUnaryOperation_Count, "Not a valid unary operator!");
 
@@ -1376,7 +1404,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddAllUnaryOps()
+	bool AddAllUnaryOps()
 	{
 		return AddUnaryOp<T, kUnaryOperation_PrefixIncrement>()
 			&& AddUnaryOp<T, kUnaryOperation_PrefixDecrement>()
@@ -1389,7 +1417,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddAllFloatUnaryOps()
+	bool AddAllFloatUnaryOps()
 	{
 		return AddUnaryOp<T, kUnaryOperation_PrefixIncrement>()
 			&& AddUnaryOp<T, kUnaryOperation_PrefixDecrement>()
@@ -1401,7 +1429,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U, BinaryOperation Op> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static bool AddBinaryOp()
+	bool AddBinaryOp()
 	{
 		static_assert(Op >= kBinaryOperation_Initial && Op < kComparisonOperation_Initial, "Not a valid binary operator!");
 
@@ -1454,7 +1482,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static bool AddAllFloatMathOps()
+	bool AddAllFloatMathOps()
 	{
 		return AddBinaryOp<T, U, kBinaryOperation_AddEquals>()
 			&& AddBinaryOp<T, U, kBinaryOperation_SubEquals>()
@@ -1467,7 +1495,7 @@ namespace Meta
 	}
 
 	template<typename T, typename U> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>> && std::is_same_v<U, std::remove_pointer_t<std::remove_cvref_t<U>>>)
-	static bool AddAllBinaryOps()
+	bool AddAllBinaryOps()
 	{
 		return AddBinaryOp<T, U, kBinaryOperation_AddEquals>()
 			&& AddBinaryOp<T, U, kBinaryOperation_SubEquals>()
@@ -1492,7 +1520,7 @@ namespace Meta
 	}
 
 	template<typename T, BinaryOperation Op> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddComparisonOp()
+	bool AddComparisonOp()
 	{
 		static_assert(Op >= kComparisonOperation_Initial && Op <= kComparisonOperation_Final, "Not a valid comparison operator!");
 
@@ -1513,7 +1541,7 @@ namespace Meta
 	}
 
 	template<typename T> requires (std::is_same_v<T, std::remove_pointer_t<std::remove_cvref_t<T>>>)
-	static bool AddAllComparisonOps()
+	bool AddAllComparisonOps()
 	{
 		return AddComparisonOp<T, kComparisonOperation_Equals>()
 			&& AddComparisonOp<T, kComparisonOperation_NotEquals>()
@@ -1528,7 +1556,7 @@ namespace Meta
 	// -----------------------------------------------------------------------------------------------------------------
 
 	template<typename T>
-	static bool AddPOD()
+	bool AddPOD()
 	{
 		return AddConstructor<T>()
 			&& AddConstructor<T, const T&>()
@@ -1539,7 +1567,7 @@ namespace Meta
 	}
 
 	template<typename T>
-	static bool AddPrimitiveIntegralType()
+	bool AddPrimitiveIntegralType()
 	{
 		return AddPOD<T>()
 			&& AddAllUnaryOps<T>()
@@ -1548,7 +1576,7 @@ namespace Meta
 	}
 
 	template<typename T>
-	static bool AddPrimitiveFloatType()
+	bool AddPrimitiveFloatType()
 	{
 		return AddPOD<T>()
 			&& AddAllFloatUnaryOps<T>()
