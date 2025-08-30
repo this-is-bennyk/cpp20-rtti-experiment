@@ -181,6 +181,61 @@ constexpr Math::Vector<T, Dimension> operator/(const Math::Vector<T, Dimension>&
 	return v;
 }
 
+template<typename T, size_t Dimension>
+constexpr Math::Vector<T, Dimension> operator==(const Math::Vector<T, Dimension>& a, const Math::Vector<T, Dimension>& b)
+{
+	Math::Vector<T, Dimension> v;
+
+	for (size_t i = 0; i < Dimension; i++)
+		v[i] = T(a[i] == b[i]);
+
+	return v;
+}
+
+template<typename T, size_t Dimension>
+constexpr Math::Vector<T, Dimension> operator<(const Math::Vector<T, Dimension>& a, const Math::Vector<T, Dimension>& b)
+{
+	Math::Vector<T, Dimension> v = a;
+
+	for (size_t i = 0; i < Dimension; i++)
+		v[i] = T(a[i] < b[i]);
+
+	return v;
+}
+
+template<typename T, size_t Dimension>
+constexpr Math::Vector<T, Dimension> operator<=(const Math::Vector<T, Dimension>& a, const Math::Vector<T, Dimension>& b)
+{
+	Math::Vector<T, Dimension> v = a;
+
+	for (size_t i = 0; i < Dimension; i++)
+		v[i] = T(a[i] <= b[i]);
+
+	return v;
+}
+
+template<typename T, size_t Dimension>
+constexpr Math::Vector<T, Dimension> operator>(const Math::Vector<T, Dimension>& a, const Math::Vector<T, Dimension>& b)
+{
+	Math::Vector<T, Dimension> v = a;
+
+	for (size_t i = 0; i < Dimension; i++)
+		v[i] = T(a[i] > b[i]);
+
+	return v;
+}
+
+template<typename T, size_t Dimension>
+constexpr Math::Vector<T, Dimension> operator>=(const Math::Vector<T, Dimension>& a, const Math::Vector<T, Dimension>& b)
+{
+	Math::Vector<T, Dimension> v = a;
+
+	for (size_t i = 0; i < Dimension; i++)
+		v[i] = T(a[i] >= b[i]);
+
+	return v;
+}
+
 namespace Math
 {
 	template<typename T, size_t Dimension> requires (kIsIntegral<T> && Dimension > size_t(0))

@@ -46,7 +46,7 @@ namespace Meta
 	T& GetGlobal()
 	{
 		static T global;
-		return &global;
+		return global;
 	}
 
 	template<typename T>
@@ -200,13 +200,7 @@ namespace Meta
 		{
 			Program::Assert(valid(), MK_ASSERT_STATS_CSTR, "Not a valid View!");
 			Program::Assert(is<T>(), MK_ASSERT_STATS_CSTR, "Not the correct type!");
-
-			if constexpr (kIsPrimitive<T>)
-			{
-				if (is_in_place_primitive())
-					return static_cast<std::remove_cvref_t<T>*>(static_cast<void*>(const_cast<u8*>(&data[0])));
-			}
-			return static_cast<std::remove_cvref_t<T>*>(*reinterpret_cast<void**>(const_cast<u8*>(&data[0])));
+			return static_cast<std::remove_cvref_t<T>*>(internal());
 		}
 
 		template<typename T>
