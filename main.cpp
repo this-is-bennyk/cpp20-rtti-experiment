@@ -1,5 +1,5 @@
 #include <iostream>
-#include "Meta.h"
+#include "Meta.hpp"
 // TIP To <b>Run</b> code, press <shortcut actionId="Run"/> or click the <icon src="AllIcons.Actions.Execute"/> icon in the gutter.
 
 class Foo { public: int x = 20; };
